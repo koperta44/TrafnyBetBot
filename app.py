@@ -19,35 +19,52 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS (FIX DLA STRZAŁKI I SAFARI) ---
+# --- 2. CSS (HARDCORE FIX DLA IPHONE) ---
 st.markdown("""
     <style>
-    /* 1. UKRYWANIE MENU I STOPKI */
-    #MainMenu {visibility: hidden;}
-    [data-testid="stMainMenu"] {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    /* 2. WYMUSZENIE WIDOCZNOŚCI STRZAŁKI (SIDEBAR TOGGLE) */
-    [data-testid="stSidebarCollapsedControl"] {
-        visibility: visible !important;
-        display: block !important;
-        color: #8742f5 !important; /* FIOLETOWA STRZAŁKA */
-        z-index: 999999 !important; /* ZAWSZE NA WIERZCHU */
-    }
-    
-    /* 3. USTAWIENIE NAGŁÓWKA JAKO PRZEZROCZYSTY (Żeby nie zasłaniał) */
-    header {
+    /* 1. NIE UKRYWAMY CAŁEGO NAGŁÓWKA (HEADER), BO ZNIKNIE STRZAŁKA */
+    /* Zamiast tego czynimy go przezroczystym, żeby nie przeszkadzał */
+    [data-testid="stHeader"] {
         background: transparent !important;
     }
 
-    /* 4. CIEMNY MOTYW */
+    /* 2. UKRYWAMY TYLKO KOLOROWY PASEK NA GÓRZE (DECORATION) */
+    [data-testid="stDecoration"] {
+        display: none !important;
+    }
+
+    /* 3. UKRYWAMY MENU Z PRAWEJ (DEPLOY, 3 KROPKI) */
+    [data-testid="stToolbar"] {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* 4. UKRYWAMY STOPKĘ */
+    footer {
+        visibility: hidden !important;
+        display: none !important;
+    }
+
+    /* 5. WYMUSZENIE WIDOCZNOŚCI PRZYCISKU SIDEBARA (STRZAŁKI) */
+    /* To jest kluczowe dla iPhone - wymuszamy renderowanie tego konkretnego elementu */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        color: #8742f5 !important; /* Twój fiolet */
+        opacity: 1 !important;
+        z-index: 1000000 !important; /* Musi być na samym wierzchu */
+        background-color: rgba(30, 30, 30, 0.5); /* Lekkie tło pod strzałką dla kontrastu */
+        border-radius: 5px;
+        padding: 5px;
+    }
+    
+    /* Ciemne tło */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* 5. STYLIZACJA PRZYCISKÓW */
+    /* Stylizacja Przycisków */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -64,30 +81,33 @@ st.markdown("""
         border: 1px solid white;
     }
     
-    /* 6. INPUTY */
+    /* Inputy i Selectboxy */
     [data-testid="stTextInput"] input, [data-testid="stSelectbox"] > div > div {
         background-color: #2d2d2d !important;
         color: white !important;
         border: 1px solid #444;
     }
     
-    /* 7. LOGO W SIDEBARZE */
+    /* Logo w sidebarze */
     [data-testid="stSidebar"] img {
         display: block;
         margin-left: auto;
         margin-right: auto;
     }
     
-    /* 8. MARGINESY MOBILE (Dostosowane pod strzałkę) */
+    /* Stylizacja Sidebara */
+    [data-testid="stSidebar"] {
+        background-color: #252526;
+        border-right: 1px solid #333;
+    }
+    
+    /* MARGINESY MOBILE - OBNIŻENIE TREŚCI */
+    /* Obniżamy treść o 60px, żeby nie wchodziła pod strzałkę na iPhone */
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 4rem !important; /* Więcej miejsca u góry */
+            padding-top: 4rem !important; 
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
-        }
-        /* Przesunięcie strzałki nieco w dół na iPhone, żeby nie wchodziła na zegar */
-        [data-testid="stSidebarCollapsedControl"] {
-            top: 10px !important;
         }
     }
     </style>
@@ -438,6 +458,7 @@ elif selected_page == "12. Słownik":
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
+
 
 
 
