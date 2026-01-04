@@ -16,50 +16,24 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="collapsed" # Na start zwinięte
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS (OSTATECZNA NAPRAWA STRZAŁKI DLA SAFARI) ---
+# --- 2. CSS (BEZ UKRYWANIA NAGŁÓWKA - WERSJA STABILNA) ---
 st.markdown("""
     <style>
-    /* 1. PRZYWRACAMY HEADER, ALE ROBIMY GO PRZEZROCZYSTYM */
-    header {
-        visibility: visible !important;
-        background: transparent !important;
-    }
-
-    /* 2. UKRYWAMY DEKORACJĘ (KOLOROWY PASEK) */
-    [data-testid="stDecoration"] {
-        display: none !important;
-    }
-
-    /* 3. UKRYWAMY MENU Z PRAWEJ (TRZY KROPKI, DEPLOY) */
-    [data-testid="stToolbar"] {
-        visibility: hidden !important;
-        height: 0px !important;
-    }
+    /* 1. UKRYWAMY TYLKO STOPKĘ I MENU Z PRAWEJ (Hamburger) */
+    /* Nie ruszamy nagłówka (header), dzięki temu strzałka > jest bezpieczna */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     
-    /* 4. TO JEST KLUCZOWE: WYMUSZENIE WIDOCZNOŚCI STRZAŁKI (PRZYCISKU SIDEBARA) */
-    [data-testid="stSidebarCollapsedControl"] {
-        visibility: visible !important;
-        display: block !important;
-        color: #8742f5 !important; /* Twój fiolet */
-        transform: scale(1.5); /* Powiększenie strzałki o 50% */
-        top: 20px !important; /* Pozycja od góry */
-        left: 20px !important; /* Pozycja od lewej */
-        z-index: 1000001 !important; /* Musi być nad wszystkim innym */
-    }
-    
-    /* 5. STOPKA */
-    footer {visibility: hidden !important;}
-    
-    /* 6. CIEMNY MOTYW */
+    /* 2. CIEMNE TŁO */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* 7. PRZYCISKI */
+    /* 3. PRZYCISKI */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -71,19 +45,26 @@ st.markdown("""
         font-size: 16px;
     }
     
-    /* 8. INPUTY */
+    /* 4. INPUTY */
     [data-testid="stTextInput"] input, [data-testid="stSelectbox"] > div > div {
         background-color: #2d2d2d !important;
         color: white !important;
         border: 1px solid #444;
     }
     
-    /* 9. MARGINESY DLA MOBILE - OBNIŻENIE TREŚCI */
+    /* 5. LOGO */
+    [data-testid="stSidebar"] img {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    /* 6. MOBILE PADDING */
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 5rem !important; /* Dużo miejsca na górze dla strzałki */
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
+            padding-top: 2rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
         }
     }
     </style>
@@ -112,7 +93,7 @@ LIGI_KODY = {
     "Rosja - Premier League": "RUS", "USA - MLS": "USA", "Meksyk - Liga MX": "MEX",
     "Brazylia - Serie A": "BRA", "Argentyna - Liga Pro": "ARG", "Chiny - Super League": "CHN", "Japonia - J-League": "JPN"
 }
-# --- FUNKCJE (OPTIMIZED) ---
+# --- FUNKCJE ---
 def clean_df(df, n, s):
     df.columns = [c.strip() for c in df.columns]
     df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
@@ -183,7 +164,7 @@ def find_teams(df, h, a):
     return rh, ra
 
 # ==============================================================================
-# PASEK BOCZNY (SIDEBAR) - TU JEST MENU
+# SIDEBAR
 # ==============================================================================
 with st.sidebar:
     try: st.image("icon.png", width=120)
@@ -191,19 +172,16 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 1. NAWIGACJA
     st.header("MENU GŁÓWNE")
     menu_options = [
         "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
         "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
         "10. BTTS", "11. Perełki", "12. Słownik"
     ]
-    # Przeniesienie wyboru do paska bocznego
     selected_page = st.selectbox("Wybierz narzędzie:", menu_options, label_visibility="collapsed")
     
     st.markdown("---")
     
-    # 2. KONFIGURACJA
     st.markdown("### Baza Danych")
     opcje = {"1 rok (Szybko)":1, "5 lat":5, "10 lat":10, "15 lat":15}
     wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=0)
@@ -223,7 +201,7 @@ with col_title:
     st.title(selected_page)
 
 if 'df' not in st.session_state or st.session_state['df'].empty:
-    st.info("👈 Kliknij FIOLETOWĄ strzałkę '>' w lewym górnym rogu, aby otworzyć menu.")
+    st.info("👈 Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę danych.")
     st.stop()
 
 df = st.session_state['df']
