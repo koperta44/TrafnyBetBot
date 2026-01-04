@@ -19,21 +19,23 @@ st.set_page_config(
     initial_sidebar_state="collapsed" # Pasek zwinięty na start (widać strzałkę >)
 )
 
-# --- 2. CSS (DARK MODE & MOBILE) ---
+# --- 2. CSS (DARK MODE & MOBILE & UKRYTE MENU) ---
 st.markdown("""
     <style>
-    /* USUNIĘTO UKRYWANIE HEADER - Strzałka > jest teraz widoczna */
+    /* 1. UKRYWANIE MENU TECHNICZNEGO (ALE ZOSTAWIAMY STRZAŁKĘ!) */
+    #MainMenu {visibility: hidden;} /* Ukrywa trzy kropki/hamburger z prawej */
+    [data-testid="stToolbar"] {visibility: hidden;} /* Ukrywa przyciski "Deploy", "Rerun" itp. */
     
-    /* Ukrycie stopki (opcjonalne) */
+    /* Ukrycie stopki "Made with Streamlit" */
     footer {visibility: hidden;}
     
-    /* Ciemne tło */
+    /* 2. Ciemne tło aplikacji */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* Stylizacja Przycisków - FIOLET */
+    /* 3. Stylizacja Przycisków - FIOLET */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -50,27 +52,27 @@ st.markdown("""
         border: 1px solid white;
     }
     
-    /* Inputy i Selectboxy */
+    /* 4. Inputy i Selectboxy */
     [data-testid="stTextInput"] input, [data-testid="stSelectbox"] > div > div {
         background-color: #2d2d2d !important;
         color: white !important;
         border: 1px solid #444;
     }
     
-    /* WYŚRODKOWANIE LOGO W SIDEBARZE */
+    /* 5. WYŚRODKOWANIE LOGO W SIDEBARZE */
     [data-testid="stSidebar"] img {
         display: block;
         margin-left: auto;
         margin-right: auto;
     }
     
-    /* STYLIZACJA SIDEBARA */
+    /* 6. STYLIZACJA SIDEBARA */
     [data-testid="stSidebar"] {
         background-color: #252526;
         border-right: 1px solid #333;
     }
     
-    /* MARGINESY MOBILE - Więcej miejsca na strzałkę */
+    /* 7. MARGINESY MOBILE - Żeby strzałka nie nachodziła na tytuł */
     @media (max-width: 768px) {
         .block-container {
             padding-top: 3.5rem !important; 
@@ -426,4 +428,5 @@ elif selected_page == "12. Słownik":
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
+
 
