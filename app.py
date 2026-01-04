@@ -136,14 +136,14 @@ LIGI_KODY = {
     "Rosja - Premier League": "RUS", "USA - MLS": "USA", "Meksyk - Liga MX": "MEX",
     "Brazylia - Serie A": "BRA", "Argentyna - Liga Pro": "ARG", "Chiny - Super League": "CHN", "Japonia - J-League": "JPN"
 }
-# --- FUNKCJE (ZOPTYMALIZOWANE) ---
+# --- FUNKCJE ---
 def clean_df(df, n, s):
     df.columns = [c.strip() for c in df.columns]
     df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
     req=['Date','HomeTeam','AwayTeam','HTR','FTR','FTHG','FTAG']
     opt=['HC','AC','HY','AY','HR','AR']
     
-    # Optymalizacja RAM
+    # Optymalizacja RAM (int8)
     for c in opt: 
         if c not in df.columns: df[c] = 0
         else: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8')
@@ -211,7 +211,7 @@ def find_teams(df, h, a):
     return rh, ra
 
 # ==============================================================================
-# PASEK BOCZNY (SIDEBAR) - TUTAJ JEST CAŁA NAWIGACJA
+# PASEK BOCZNY (SIDEBAR) - WSZYSTKO TUTAJ
 # ==============================================================================
 with st.sidebar:
     try: st.image("icon.png", width=120)
@@ -219,7 +219,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 1. NAWIGACJA (PRZENIESIONA DO SIDEBARA)
+    # 1. NAWIGACJA
     st.header("MENU GŁÓWNE")
     menu_options = [
         "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
@@ -230,7 +230,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 2. BAZA DANYCH (TEŻ W SIDEBARZE)
+    # 2. BAZA DANYCH
     st.markdown("### Baza Danych")
     opcje = {"1 rok (Szybko)":1, "5 lat":5, "10 lat":10, "15 lat":15}
     wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=0)
@@ -247,11 +247,10 @@ with col_logo:
     try: st.image("icon.png", width=50)
     except: st.write("⚽")
 with col_title:
-    # Tytuł to nazwa wybranej zakładki
     st.title(selected_page)
 
 if 'df' not in st.session_state or st.session_state['df'].empty:
-    st.info("👈 Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę danych.")
+    st.info("👈 Kliknij fioletową strzałkę '>' w lewym górnym rogu i pobierz bazę danych.")
     st.stop()
 
 df = st.session_state['df']
