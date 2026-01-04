@@ -16,55 +16,50 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed" # Na start zwinięte
 )
 
-# --- 2. CSS (HARDCORE FIX DLA IPHONE) ---
+# --- 2. CSS (OSTATECZNA NAPRAWA STRZAŁKI DLA SAFARI) ---
 st.markdown("""
     <style>
-    /* 1. NIE UKRYWAMY CAŁEGO NAGŁÓWKA (HEADER), BO ZNIKNIE STRZAŁKA */
-    /* Zamiast tego czynimy go przezroczystym, żeby nie przeszkadzał */
-    [data-testid="stHeader"] {
+    /* 1. PRZYWRACAMY HEADER, ALE ROBIMY GO PRZEZROCZYSTYM */
+    header {
+        visibility: visible !important;
         background: transparent !important;
     }
 
-    /* 2. UKRYWAMY TYLKO KOLOROWY PASEK NA GÓRZE (DECORATION) */
+    /* 2. UKRYWAMY DEKORACJĘ (KOLOROWY PASEK) */
     [data-testid="stDecoration"] {
         display: none !important;
     }
 
-    /* 3. UKRYWAMY MENU Z PRAWEJ (DEPLOY, 3 KROPKI) */
+    /* 3. UKRYWAMY MENU Z PRAWEJ (TRZY KROPKI, DEPLOY) */
     [data-testid="stToolbar"] {
         visibility: hidden !important;
-        display: none !important;
+        height: 0px !important;
     }
     
-    /* 4. UKRYWAMY STOPKĘ */
-    footer {
-        visibility: hidden !important;
-        display: none !important;
-    }
-
-    /* 5. WYMUSZENIE WIDOCZNOŚCI PRZYCISKU SIDEBARA (STRZAŁKI) */
-    /* To jest kluczowe dla iPhone - wymuszamy renderowanie tego konkretnego elementu */
+    /* 4. TO JEST KLUCZOWE: WYMUSZENIE WIDOCZNOŚCI STRZAŁKI (PRZYCISKU SIDEBARA) */
     [data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
         visibility: visible !important;
+        display: block !important;
         color: #8742f5 !important; /* Twój fiolet */
-        opacity: 1 !important;
-        z-index: 1000000 !important; /* Musi być na samym wierzchu */
-        background-color: rgba(30, 30, 30, 0.5); /* Lekkie tło pod strzałką dla kontrastu */
-        border-radius: 5px;
-        padding: 5px;
+        transform: scale(1.5); /* Powiększenie strzałki o 50% */
+        top: 20px !important; /* Pozycja od góry */
+        left: 20px !important; /* Pozycja od lewej */
+        z-index: 1000001 !important; /* Musi być nad wszystkim innym */
     }
     
-    /* Ciemne tło */
+    /* 5. STOPKA */
+    footer {visibility: hidden !important;}
+    
+    /* 6. CIEMNY MOTYW */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* Stylizacja Przycisków */
+    /* 7. PRZYCISKI */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -74,40 +69,21 @@ st.markdown("""
         height: 3.5em;
         font-weight: bold;
         font-size: 16px;
-        transition: 0.3s;
-    }
-    div.stButton > button:hover {
-        background-color: #6a25c9;
-        border: 1px solid white;
     }
     
-    /* Inputy i Selectboxy */
+    /* 8. INPUTY */
     [data-testid="stTextInput"] input, [data-testid="stSelectbox"] > div > div {
         background-color: #2d2d2d !important;
         color: white !important;
         border: 1px solid #444;
     }
     
-    /* Logo w sidebarze */
-    [data-testid="stSidebar"] img {
-        display: block;
-        margin-left: auto;
-        margin-right: auto;
-    }
-    
-    /* Stylizacja Sidebara */
-    [data-testid="stSidebar"] {
-        background-color: #252526;
-        border-right: 1px solid #333;
-    }
-    
-    /* MARGINESY MOBILE - OBNIŻENIE TREŚCI */
-    /* Obniżamy treść o 60px, żeby nie wchodziła pod strzałkę na iPhone */
+    /* 9. MARGINESY DLA MOBILE - OBNIŻENIE TREŚCI */
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 4rem !important; 
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
+            padding-top: 5rem !important; /* Dużo miejsca na górze dla strzałki */
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
         }
     }
     </style>
@@ -136,14 +112,13 @@ LIGI_KODY = {
     "Rosja - Premier League": "RUS", "USA - MLS": "USA", "Meksyk - Liga MX": "MEX",
     "Brazylia - Serie A": "BRA", "Argentyna - Liga Pro": "ARG", "Chiny - Super League": "CHN", "Japonia - J-League": "JPN"
 }
-# --- FUNKCJE ---
+# --- FUNKCJE (OPTIMIZED) ---
 def clean_df(df, n, s):
     df.columns = [c.strip() for c in df.columns]
     df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
     req=['Date','HomeTeam','AwayTeam','HTR','FTR','FTHG','FTAG']
     opt=['HC','AC','HY','AY','HR','AR']
     
-    # Optymalizacja RAM (int8)
     for c in opt: 
         if c not in df.columns: df[c] = 0
         else: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8')
@@ -151,7 +126,6 @@ def clean_df(df, n, s):
     if 'FTAG' in df.columns: df['FTAG'] = pd.to_numeric(df['FTAG'], errors='coerce').fillna(0).astype('int8')
     if 'FTR' not in df.columns: df['FTR']='D'
     
-    # Text -> Category
     if 'HomeTeam' in df.columns: df['HomeTeam'] = df['HomeTeam'].astype(str)
     if 'AwayTeam' in df.columns: df['AwayTeam'] = df['AwayTeam'].astype(str)
 
@@ -174,7 +148,6 @@ def pobierz_dane(ile_lat):
     status = st.sidebar.empty()
     status.info("Łączenie...")
     
-    # 1. Current
     for n, k in LIGI_KODY.items():
         try:
             r = requests.get(f"https://www.football-data.co.uk/new/{k}.csv", timeout=1)
@@ -183,7 +156,6 @@ def pobierz_dane(ile_lat):
                 wszystkie.append(df)
         except: pass
     
-    # 2. Historia
     if ile_lat > 0:
         for s in sezony:
             for n, k in LIGI_KODY.items():
@@ -211,7 +183,7 @@ def find_teams(df, h, a):
     return rh, ra
 
 # ==============================================================================
-# PASEK BOCZNY (SIDEBAR) - WSZYSTKO TUTAJ
+# PASEK BOCZNY (SIDEBAR) - TU JEST MENU
 # ==============================================================================
 with st.sidebar:
     try: st.image("icon.png", width=120)
@@ -226,11 +198,12 @@ with st.sidebar:
         "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
         "10. BTTS", "11. Perełki", "12. Słownik"
     ]
+    # Przeniesienie wyboru do paska bocznego
     selected_page = st.selectbox("Wybierz narzędzie:", menu_options, label_visibility="collapsed")
     
     st.markdown("---")
     
-    # 2. BAZA DANYCH
+    # 2. KONFIGURACJA
     st.markdown("### Baza Danych")
     opcje = {"1 rok (Szybko)":1, "5 lat":5, "10 lat":10, "15 lat":15}
     wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=0)
@@ -250,7 +223,7 @@ with col_title:
     st.title(selected_page)
 
 if 'df' not in st.session_state or st.session_state['df'].empty:
-    st.info("👈 Kliknij fioletową strzałkę '>' w lewym górnym rogu i pobierz bazę danych.")
+    st.info("👈 Kliknij FIOLETOWĄ strzałkę '>' w lewym górnym rogu, aby otworzyć menu.")
     st.stop()
 
 df = st.session_state['df']
@@ -457,6 +430,7 @@ elif selected_page == "12. Słownik":
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
+
 
 
 
