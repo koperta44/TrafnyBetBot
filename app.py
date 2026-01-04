@@ -16,24 +16,24 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed" # Pasek ukryty na start (kliknij strzałkę >, aby otworzyć)
 )
 
-# --- 2. CSS (DARK MODE & MOBILE NAV) ---
+# --- 2. CSS (NAPRAWIONY - STRZAŁKA WIDOCZNA) ---
 st.markdown("""
     <style>
-    /* Ukrycie zbędnych elementów */
-    [data-testid="stToolbar"] {visibility: hidden !important;}
-    header {visibility: hidden !important;}
-    footer {visibility: hidden !important;}
+    /* Ukrywamy tylko stopkę i menu hamburgera z prawej (opcjonalnie), 
+       ALE ZOSTAWIAMY HEADER, ŻEBY BYŁO WIDAĆ STRZAŁKĘ OD SIDEBARA */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     
-    /* Ciemne tło */
+    /* Wymuszenie ciemnego tła */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* Stylizacja Przycisków - FIOLET */
+    /* PRZYCISKI - FIOLET */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -50,34 +50,33 @@ st.markdown("""
         border: 1px solid white;
     }
     
-    /* Inputy i Selectboxy */
+    /* INPUTY */
     [data-testid="stTextInput"] input {
         background-color: #2d2d2d;
         color: white;
         border: 1px solid #444;
     }
-    /* Stylizacja głównego menu wyboru */
+    
+    /* SELECTBOX */
     .stSelectbox > div > div {
         background-color: #2d2d2d !important;
         color: white !important;
-        font-size: 18px !important;
-        font-weight: bold;
     }
-    
-    /* Marginesy Mobile */
-    @media (max-width: 768px) {
-        .block-container {
-            padding-top: 2rem !important;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
-        }
-    }
-    
-    /* Wyśrodkowanie logo w sidebarze */
+
+    /* WYŚRODKOWANIE LOGO W SIDEBARZE */
     [data-testid="stSidebar"] img {
         display: block;
         margin-left: auto;
         margin-right: auto;
+    }
+    
+    /* POPRAWKA MARGINESÓW NA MOBILE */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-top: 3rem !important; /* Miejsce na strzałkę */
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -105,7 +104,6 @@ LIGI_KODY = {
     "Rosja - Premier League": "RUS", "USA - MLS": "USA", "Meksyk - Liga MX": "MEX",
     "Brazylia - Serie A": "BRA", "Argentyna - Liga Pro": "ARG", "Chiny - Super League": "CHN", "Japonia - J-League": "JPN"
 }
-
 # --- FUNKCJE ---
 @st.cache_data(ttl=3600)
 def pobierz_dane(ile_lat):
@@ -172,17 +170,17 @@ with st.sidebar:
     try: st.image("icon.png", width=120)
     except: st.title("TrafnyBetBot")
     
-    st.markdown("### ⚙️ Konfiguracja")
+    st.markdown("### ⚙️ Baza Danych")
     opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
-    wybor = st.selectbox("Historia:", list(opcje.keys()), index=1)
+    wybor = st.selectbox("Zakres:", list(opcje.keys()), index=1)
     
-    if st.button("POBIERZ / ODŚWIEŻ BAZĘ"):
+    if st.button("POBIERZ / ODŚWIEŻ"):
         with st.spinner("Pobieranie..."):
             st.session_state['df'] = pobierz_dane(opcje[wybor])
         st.success(f"Gotowe! Mecze: {len(st.session_state['df'])}")
     
     st.markdown("---")
-    st.info("Aby zmienić narzędzie, użyj menu na górze głównego ekranu.")
+    st.info("Pasek boczny służy tylko do pobierania bazy. Reszta w głównym oknie.")
 
 # --- GŁÓWNY INTERFEJS ---
 
@@ -196,13 +194,12 @@ with col_title:
 
 if 'df' not in st.session_state:
     st.warning("⚠️ Baza danych jest pusta.")
-    st.info("Kliknij strzałkę '>' w lewym górnym rogu, aby otworzyć menu i pobrać bazę.")
+    st.info("Kliknij strzałkę '>' w lewym górnym rogu (Pasek Boczny), aby pobrać bazę.")
     st.stop()
 
 df = st.session_state['df']
 
-# --- NAWIGACJA (SELECTBOX ZAMIAST ZAKŁADEK) ---
-# To jest kluczowe dla mobile - lista rozwijana zamiast niewidocznych zakładek
+# --- NAWIGACJA (LISTA ROZWIJANA DLA MOBILE) ---
 menu_options = [
     "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
     "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
@@ -259,16 +256,16 @@ elif selected_page == "3. Łamak 1/2":
     if st.button("Analizuj"):
         rh, ra = find_teams(df, h, a)
         if rh and ra:
+            h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
+            h_lam = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
+            a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
+            a_lam = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
+            
             mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
             h_lead = len(mh[mh['HTR']=='H']); h_choke = len(mh[(mh['HTR']=='H')&(mh['FTR']=='A')])
             hr = (h_choke/h_lead*100) if h_lead else 0
             a_trail = len(ma[ma['HTR']=='H']); a_come = len(ma[(ma['HTR']=='H')&(ma['FTR']=='A')])
             ac = (a_come/a_trail*100) if a_trail else 0
-            
-            h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
-            h_lam = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
-            a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
-            a_lam = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
             
             st.metric("Szansa Matematyczna", f"{(hr+ac)/2:.1f}%")
             st.write(f"**{rh}:** {h_lam} łamaków w historii.")
@@ -434,5 +431,4 @@ elif selected_page == "12. Słownik":
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
-
 
