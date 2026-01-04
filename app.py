@@ -19,10 +19,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# --- 2. CSS (BEZPIECZNY NAGŁÓWEK - STRZAŁKA WIDOCZNA) ---
+# --- 2. CSS (BEZPIECZNY - STRZAŁKA DZIAŁA NA IPHONE) ---
 st.markdown("""
     <style>
-    /* 1. Header widoczny (zapewnia działanie strzałki na iPhone) */
+    /* 1. Header widoczny, ale przezroczysty - to naprawia strzałkę na iOS */
     header {
         visibility: visible !important;
         background: transparent !important;
@@ -37,7 +37,7 @@ st.markdown("""
         color: #e0e0e0;
     }
     
-    /* 4. Przyciski */
+    /* 4. Przyciski - FIOLET */
     div.stButton > button {
         width: 100%;
         background: linear-gradient(135deg, #8742f5 0%, #5e17eb 100%);
@@ -224,7 +224,7 @@ with col_title:
     st.title(selected_page)
 
 if 'df' not in st.session_state or st.session_state['df'].empty:
-    st.info("👈 Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę.")
+    st.info("👈 Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę danych.")
     st.stop()
 
 df = st.session_state['df']
@@ -261,8 +261,8 @@ elif selected_page == "2. Przeciwnik":
                 if op==rh: continue
                 ma=df[df['AwayTeam']==op]
                 choke=len(ma[(ma['HTR']=='A')&(ma['FTR']=='H')])
-                if choke>0: cand.append({'Rywal':op, 'Wpadki':choke})
-            if cand: st.dataframe(pd.DataFrame(cand).sort_values('Wpadki',ascending=False).head(20), use_container_width=True)
+                if choke>0: cand.append({'Rywal':op, 'Wpadki (Łamak)':choke})
+            if cand: st.dataframe(pd.DataFrame(cand).sort_values('Wpadki (Łamak)',ascending=False).head(20), use_container_width=True)
             else: st.info("Brak kandydatów.")
 
 elif selected_page == "3. Łamak 1/2":
@@ -271,16 +271,15 @@ elif selected_page == "3. Łamak 1/2":
     if st.button("Analiza HT/FT"):
         rh, ra = find_teams(df, h, a)
         if rh and ra:
-            # 1. ŁAMAKI OGÓŁEM (Naprawione)
-            h_total_hist = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
-            h_lam_total = len(h_total_hist[((h_total_hist['HTR']=='H')&(h_total_hist['FTR']=='A'))|((h_total_hist['HTR']=='A')&(h_total_hist['FTR']=='H'))])
+            # Historia Łamaków Ogółem
+            h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
+            h_lam_total = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
             
-            a_total_hist = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
-            a_lam_total = len(a_total_hist[((a_total_hist['HTR']=='H')&(a_total_hist['FTR']=='A'))|((a_total_hist['HTR']=='A')&(a_total_hist['FTR']=='H'))])
-
-            # 2. SCENARIUSZ 1/2
+            a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
+            a_lam_total = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
+            
+            # Scenariusz
             mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
-            
             h_lead = len(mh[mh['HTR']=='H']); h_choke = len(mh[(mh['HTR']=='H')&(mh['FTR']=='A')])
             h_pct = (h_choke/h_lead*100) if h_lead > 0 else 0
             
@@ -295,11 +294,11 @@ elif selected_page == "3. Łamak 1/2":
             with c1:
                 st.write(f"**{rh}:**")
                 st.write(f"- Łamaków w historii: **{h_lam_total}**")
-                st.write(f"- Oddał mecz u siebie: {h_choke} razy")
+                st.write(f"- Oddał mecz u siebie: {h_choke}")
             with c2:
                 st.write(f"**{ra}:**")
                 st.write(f"- Łamaków w historii: **{a_lam_total}**")
-                st.write(f"- Odrobił na wyjeździe: {a_come} razy")
+                st.write(f"- Odrobił na wyjeździe: {a_come}")
 
 elif selected_page == "4. H2H Kalendarz":
     m = st.slider("Miesiąc:", 1, 12, datetime.now().month)
@@ -336,7 +335,6 @@ elif selected_page == "5. Gole (xG)":
                 
                 with c_un:
                     st.error("UNDER (Poniżej)")
-                    # Under = 100% - Over
                     st.write(f"**Under 1.5:** {(1-probs['O1.5'])*100:.1f}%")
                     st.write(f"**Under 2.5:** {(1-probs['O2.5'])*100:.1f}%")
             else: st.error("Za mało danych.")
@@ -351,7 +349,7 @@ elif selected_page == "6. Remisy":
                 probs, _ = poisson_probability(metrics['xg_h'], metrics['xg_a'])
                 st.metric("Szansa na Remis", f"{probs['X']*100:.1f}%")
                 if abs(metrics['xg_h'] - metrics['xg_a']) < 0.2: 
-                    st.success("Bardzo wyrównany mecz!")
+                    st.success("Wyrównany mecz!")
 
 elif selected_page == "7. Dokładny Wynik":
     c1, c2 = st.columns(2); h7=c1.text_input("H:", key="t7h"); a7=c2.text_input("A:", key="t7a")
@@ -386,23 +384,17 @@ elif selected_page == "9. Kartki":
             dfc = df[(df['HY']+df['AY'])>0]
             mh = dfc[dfc['HomeTeam']==rh].tail(15); ma = dfc[dfc['AwayTeam']==ra].tail(15)
             if not mh.empty and not ma.empty:
-                # Średnia kartek (nie punktów, dla czytelności)
                 h_cards = mh['HY'].mean() + mh['HR'].mean()
                 a_cards = ma['AY'].mean() + ma['AR'].mean()
-                
-                # Agresja meczowa (średnia z obu)
                 exp_cards = (h_cards + a_cards)
                 
                 st.metric("Przewidywana liczba kartek", f"{exp_cards:.1f}")
                 
-                st.markdown("### Sugerowane Linie:")
                 c_ov, c_un = st.columns(2)
                 with c_ov:
-                    st.success(f"📈 **OVER {math.floor(exp_cards - 0.5)}.5**")
-                    st.caption("Bezpieczniejsza opcja")
+                    st.success(f"📈 OVER {math.floor(exp_cards - 0.5)}.5")
                 with c_un:
-                    st.error(f"📉 **UNDER {math.ceil(exp_cards + 0.5)}.5**")
-                    st.caption("Górna granica")
+                    st.error(f"📉 UNDER {math.ceil(exp_cards + 0.5)}.5")
             else: st.warning("Brak danych.")
 
 elif selected_page == "10. BTTS":
@@ -416,7 +408,8 @@ elif selected_page == "10. BTTS":
                 st.metric("Szansa BTTS", f"{probs['BTTS']*100:.1f}%")
 
 elif selected_page == "11. Perełki":
-    thr = st.slider("Próg szansy (%)", 50, 90, 65)
+    # ZMIANA: Zakres suwaka 10-100
+    thr = st.slider("Minimalna szansa (%)", 10, 100, 50)
     if st.button("Szukaj"):
         with st.spinner("Analiza..."):
             matches = []
@@ -436,6 +429,7 @@ elif selected_page == "12. Słownik":
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
+
 
 
 
