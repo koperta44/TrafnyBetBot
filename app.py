@@ -16,30 +16,31 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="collapsed" # Domyślnie zwinięty sidebar na start
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS (POPRAWIONY - PRZYWRÓCONO NAGŁÓWEK DLA MOBILE) ---
+# --- 2. CSS (DARK MODE & MOBILE NAV) ---
 st.markdown("""
     <style>
-    /* Ukrywamy stopkę i hamburger menu (opcje), ALE NIE CAŁY HEADER */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    /* Ukrycie zbędnych elementów */
+    [data-testid="stToolbar"] {visibility: hidden !important;}
+    header {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
     
-    /* Wymuszenie ciemnego tła */
+    /* Ciemne tło */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* STYLIZACJA PRZYCISKÓW (FIOLET) */
+    /* Stylizacja Przycisków - FIOLET */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
         color: white;
         border: none;
         border-radius: 8px;
-        height: 3.5em; /* Wyższe przyciski dla palca */
+        height: 3.5em;
         font-weight: bold;
         font-size: 16px;
         transition: 0.3s;
@@ -49,24 +50,37 @@ st.markdown("""
         border: 1px solid white;
     }
     
-    /* INPUTY */
+    /* Inputy i Selectboxy */
     [data-testid="stTextInput"] input {
         background-color: #2d2d2d;
         color: white;
         border: 1px solid #444;
     }
+    /* Stylizacja głównego menu wyboru */
+    .stSelectbox > div > div {
+        background-color: #2d2d2d !important;
+        color: white !important;
+        font-size: 18px !important;
+        font-weight: bold;
+    }
     
-    /* OPTYMALIZACJA MOBILNA (Mniejsze marginesy = więcej miejsca) */
+    /* Marginesy Mobile */
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 1rem !important;
+            padding-top: 2rem !important;
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
         }
     }
+    
+    /* Wyśrodkowanie logo w sidebarze */
+    [data-testid="stSidebar"] img {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }
     </style>
     """, unsafe_allow_html=True)
-
 # --- 3. PEŁNA LISTA LIG ---
 LIGI_KODY = {
     # ANGLIA
@@ -99,11 +113,8 @@ def pobierz_dane(ile_lat):
     sezony = [f"{i:02d}{i+1:02d}" for i in range(start_y, curr_y+1)]; sezony.reverse()
     wszystkie = []
     
-    status_box = st.empty()
-    status_box.info("Inicjowanie połączenia...")
-    
-    total = len(sezony) * len(LIGI_KODY)
-    done = 0
+    status = st.sidebar.empty()
+    status.info("⏳ Pobieranie...")
     
     for s in sezony:
         for n, k in LIGI_KODY.items():
@@ -114,10 +125,7 @@ def pobierz_dane(ile_lat):
                     df = clean_df(df, n, s)
                     wszystkie.append(df)
             except: pass
-            done += 1
-            if done % 50 == 0: status_box.text(f"Pobieranie historyczne... {int(done/total*100)}%")
             
-    status_box.text("Pobieranie bieżących sezonów...")
     for n, k in LIGI_KODY.items():
         try:
             r = requests.get(f"https://www.football-data.co.uk/new/{k}.csv", timeout=1)
@@ -126,7 +134,7 @@ def pobierz_dane(ile_lat):
                 wszystkie.append(df)
         except: pass
         
-    status_box.empty()
+    status.empty()
     
     if wszystkie:
         final = pd.concat(wszystkie, ignore_index=True).drop_duplicates()
@@ -159,45 +167,56 @@ def find_teams(df, h, a):
     ra = next((t for t in all_t if a.lower() in str(t).lower()), None)
     return rh, ra
 
-# ==============================================================================
-# INTERFEJS UŻYTKOWNIKA (MOBILE FIRST)
-# ==============================================================================
+# --- SIDEBAR (PANEL KONFIGURACJI) ---
+with st.sidebar:
+    try: st.image("icon.png", width=120)
+    except: st.title("TrafnyBetBot")
+    
+    st.markdown("### ⚙️ Konfiguracja")
+    opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
+    wybor = st.selectbox("Historia:", list(opcje.keys()), index=1)
+    
+    if st.button("POBIERZ / ODŚWIEŻ BAZĘ"):
+        with st.spinner("Pobieranie..."):
+            st.session_state['df'] = pobierz_dane(opcje[wybor])
+        st.success(f"Gotowe! Mecze: {len(st.session_state['df'])}")
+    
+    st.markdown("---")
+    st.info("Aby zmienić narzędzie, użyj menu na górze głównego ekranu.")
 
-# Logo na górze strony (dla mobile i desktop)
-col_logo, col_title = st.columns([1, 4])
+# --- GŁÓWNY INTERFEJS ---
+
+# Logo i Tytuł na głównej
+col_logo, col_title = st.columns([1, 5])
 with col_logo:
-    try: st.image("icon.png", width=80)
+    try: st.image("icon.png", width=60)
     except: st.write("⚽")
 with col_title:
     st.title("TrafnyBetBot")
 
-# --- PANEL KONFIGURACYJNY (NA GÓRZE, ZAMIAST SIDEBARA DLA MOBILE) ---
-with st.expander("⚙️ KONFIGURACJA I BAZA DANYCH (Kliknij, aby rozwinąć)", expanded=False):
-    st.write("Wybierz zakres historii i pobierz najnowsze dane.")
-    
-    opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
-    wybor = st.selectbox("Zakres:", list(opcje.keys()), index=1)
-    
-    if st.button("POBIERZ BAZĘ DANYCH"):
-        with st.spinner("Pobieranie danych..."):
-            st.session_state['df'] = pobierz_dane(opcje[wybor])
-        st.success(f"Baza gotowa: {len(st.session_state['df'])} meczów")
-
-# --- GŁÓWNA TREŚĆ ---
 if 'df' not in st.session_state:
-    st.info("👆 Rozwiń panel 'KONFIGURACJA' powyżej i kliknij 'POBIERZ BAZĘ', aby rozpocząć.")
+    st.warning("⚠️ Baza danych jest pusta.")
+    st.info("Kliknij strzałkę '>' w lewym górnym rogu, aby otworzyć menu i pobrać bazę.")
     st.stop()
 
 df = st.session_state['df']
 
-# Zakładki przewijane poziomo na telefonie
-tabs = st.tabs([
-    "Schematy", "Przeciwnik", "Łamak 1/2", "H2H Kalendarz", "Gole", "Remisy",
-    "Wynik", "Rożne", "Kartki", "BTTS", "Perełki", "Słownik"
-])
+# --- NAWIGACJA (SELECTBOX ZAMIAST ZAKŁADEK) ---
+# To jest kluczowe dla mobile - lista rozwijana zamiast niewidocznych zakładek
+menu_options = [
+    "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
+    "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
+    "10. BTTS", "11. Perełki", "12. Słownik"
+]
+
+selected_page = st.selectbox("≡ WYBIERZ NARZĘDZIE:", menu_options)
+st.markdown("---")
+
+# --- LOGIKA MODUŁÓW ---
 
 # 1. SCHEMATY
-with tabs[0]:
+if selected_page == "1. Schematy":
+    st.header("Globalne Trendy")
     if st.button("Skanuj Bazę"):
         teams = set(df['HomeTeam'])|set(df['AwayTeam']); res=[]
         for t in teams:
@@ -206,22 +225,21 @@ with tabs[0]:
             hard = len(d[((d['HTR']=='H')&(d['FTR']=='A'))|((d['HTR']=='A')&(d['FTR']=='H'))])
             if hard>0: res.append({'Drużyna':t, 'Mecze':len(d), 'Łamaki':hard})
         
-        c1, c2 = st.columns(2)
-        with c1:
-            st.write("Top Drużyny")
-            if res: st.dataframe(pd.DataFrame(res).sort_values('Łamaki', ascending=False).head(20), use_container_width=True)
-        with c2:
-            st.write("Top Pary H2H")
-            p = df[((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))]
-            if not p.empty:
-                cnt = p.groupby(['HomeTeam','AwayTeam']).size().reset_index(name='Ilość')
-                st.dataframe(cnt[cnt['Ilość']>=2].sort_values('Ilość', ascending=False), use_container_width=True)
-            else: st.info("Brak par.")
+        st.subheader("Top Drużyny (Łamaki)")
+        if res: st.dataframe(pd.DataFrame(res).sort_values('Łamaki', ascending=False).head(20), use_container_width=True)
+        
+        st.subheader("Top Pary H2H")
+        p = df[((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))]
+        if not p.empty:
+            cnt = p.groupby(['HomeTeam','AwayTeam']).size().reset_index(name='Ilość')
+            st.dataframe(cnt[cnt['Ilość']>=2].sort_values('Ilość', ascending=False), use_container_width=True)
+        else: st.info("Brak par.")
 
 # 2. PRZECIWNIK
-with tabs[1]:
+elif selected_page == "2. Przeciwnik":
+    st.header("Szukaj Ofiary")
     mt = st.text_input("Gospodarz (Ty):")
-    if st.button("Szukaj Ofiary") and mt:
+    if st.button("Szukaj") and mt:
         rh, _ = find_teams(df, mt, "x")
         if rh:
             cand=[]
@@ -233,36 +251,34 @@ with tabs[1]:
             if cand: st.dataframe(pd.DataFrame(cand).sort_values('Wpadki',ascending=False).head(20), use_container_width=True)
             else: st.info("Brak.")
 
-# 3. ŁAMAK (Fixed Logic)
-with tabs[2]:
+# 3. ŁAMAK
+elif selected_page == "3. Łamak 1/2":
+    st.header("Analiza 1/2")
     c1, c2 = st.columns(2)
     h = c1.text_input("Gosp:", key="t3h"); a = c2.text_input("Gość:", key="t3a")
-    if st.button("Analizuj 1/2"):
+    if st.button("Analizuj"):
         rh, ra = find_teams(df, h, a)
         if rh and ra:
-            # A. HISTORIA
-            h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
-            h_lam = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
-            a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
-            a_lam = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
-            
-            # B. SCENARIUSZ
             mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
             h_lead = len(mh[mh['HTR']=='H']); h_choke = len(mh[(mh['HTR']=='H')&(mh['FTR']=='A')])
             hr = (h_choke/h_lead*100) if h_lead else 0
             a_trail = len(ma[ma['HTR']=='H']); a_come = len(ma[(ma['HTR']=='H')&(ma['FTR']=='A')])
             ac = (a_come/a_trail*100) if a_trail else 0
             
+            h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
+            h_lam = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
+            a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
+            a_lam = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
+            
             st.metric("Szansa Matematyczna", f"{(hr+ac)/2:.1f}%")
-            st.markdown("### Historia Ogólna")
             st.write(f"**{rh}:** {h_lam} łamaków w historii.")
             st.write(f"**{ra}:** {a_lam} łamaków w historii.")
-            st.markdown("### Scenariusz 1/2 (Dom -> Wyjazd)")
-            st.write(f"**{rh} (Dom):** Oddał prowadzenie {h_choke} razy ({hr:.1f}%)")
-            st.write(f"**{ra} (Wyjazd):** Odrobił stratę {a_come} razy ({ac:.1f}%)")
+            st.write(f"**Dom:** Oddał prowadzenie {h_choke} razy ({hr:.1f}%)")
+            st.write(f"**Wyjazd:** Odrobił stratę {a_come} razy ({ac:.1f}%)")
 
-# 4. H2H KALENDARZ (Fixed Logic)
-with tabs[3]:
+# 4. H2H KALENDARZ
+elif selected_page == "4. H2H Kalendarz":
+    st.header("Serie H2H w miesiącu")
     m = st.slider("Miesiąc:", 1, 12, datetime.now().month)
     if st.button("Szukaj Serii"):
         lam = df[(((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))) & (df['Miesiac']==m)]
@@ -279,10 +295,11 @@ with tabs[3]:
         else: st.info("Brak łamaków w tym miesiącu.")
 
 # 5. GOLE
-with tabs[4]:
+elif selected_page == "5. Gole":
+    st.header("Gole Over/Under")
     c1, c2 = st.columns(2)
     h5 = c1.text_input("H:", key="t5h"); a5 = c2.text_input("A:", key="t5a")
-    if st.button("Oblicz Gole"):
+    if st.button("Oblicz"):
         rh, ra = find_teams(df, h5, a5)
         if rh and ra:
             mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
@@ -299,17 +316,19 @@ with tabs[4]:
             st.table(pd.DataFrame(data).set_index("Typ").style.format("{:.1f}"))
 
 # 6. REMISY
-with tabs[5]:
+elif selected_page == "6. Remisy":
+    st.header("Remis")
     c1, c2 = st.columns(2); h6=c1.text_input("H:", key="t6h"); a6=c2.text_input("A:", key="t6a")
-    if st.button("Sprawdź Remis"):
+    if st.button("Sprawdź"):
         rh, ra = find_teams(df, h6, a6)
         if rh:
             p1=len(df[(df['HomeTeam']==rh)&(df['FTR']=='D')])/len(df[df['HomeTeam']==rh])*100 if len(df[df['HomeTeam']==rh]) else 0
             p2=len(df[(df['AwayTeam']==ra)&(df['FTR']=='D')])/len(df[df['AwayTeam']==ra])*100 if len(df[df['AwayTeam']==ra]) else 0
             st.metric("Szansa", f"{(p1+p2)/2:.1f}%")
 
-# 7. DOKŁADNY WYNIK
-with tabs[6]:
+# 7. WYNIK
+elif selected_page == "7. Dokładny Wynik":
+    st.header("Symulacja Wyniku")
     c1, c2 = st.columns(2); h7=c1.text_input("H:", key="t7h"); a7=c2.text_input("A:", key="t7a")
     if st.button("SYMULUJ"):
         rh, ra = find_teams(df, h7, a7)
@@ -332,7 +351,8 @@ with tabs[6]:
             except: st.error("Błąd.")
 
 # 8. ROŻNE
-with tabs[7]:
+elif selected_page == "8. Rożne":
+    st.header("Rożne")
     c1, c2 = st.columns(2); h8=c1.text_input("H:", key="t8h"); a8=c2.text_input("A:", key="t8a")
     if st.button("Analiza Rożnych"):
         rh, ra = find_teams(df, h8, a8)
@@ -345,7 +365,8 @@ with tabs[7]:
             else: st.warning("Brak danych.")
 
 # 9. KARTKI
-with tabs[8]:
+elif selected_page == "9. Kartki":
+    st.header("Kartki")
     c1, c2 = st.columns(2); h9=c1.text_input("H:", key="t9h"); a9=c2.text_input("A:", key="t9a")
     if st.button("Analiza Kartek"):
         rh, ra = find_teams(df, h9, a9)
@@ -358,7 +379,8 @@ with tabs[8]:
             else: st.warning("Brak danych.")
 
 # 10. BTTS
-with tabs[9]:
+elif selected_page == "10. BTTS":
+    st.header("BTTS")
     c1, c2 = st.columns(2); h10=c1.text_input("H:", key="t10h"); a10=c2.text_input("A:", key="t10a")
     if st.button("Sprawdź BTTS"):
         rh, ra = find_teams(df, h10, a10)
@@ -368,7 +390,8 @@ with tabs[9]:
             st.metric("Szansa", f"{(hp+ap)/2:.1f}%")
 
 # 11. PEREŁKI
-with tabs[10]:
+elif selected_page == "11. Perełki":
+    st.header("Generator Perełek")
     thr = st.slider("Próg szansy (%)", 10, 100, 30)
     if st.button("Generuj Listy"):
         with st.spinner("Przetwarzanie..."):
@@ -395,21 +418,21 @@ with tabs[10]:
                         glo.append(desc)
                         if d1['L'] == d2['L']: real.append(desc)
                         
-        c1, c2 = st.columns(2)
-        with c1:
-            st.write("Ta sama liga (Realne)")
-            if real: st.dataframe(pd.DataFrame(real).sort_values('prob_num', ascending=False).drop(columns=['prob_num']), use_container_width=True)
-            else: st.info("Brak.")
-        with c2:
-            st.write("Cały świat (Top 200)")
-            if glo: st.dataframe(pd.DataFrame(glo).sort_values('prob_num', ascending=False).head(200).drop(columns=['prob_num']), use_container_width=True)
-            else: st.info("Brak.")
+        st.subheader("Ta sama liga (Realne)")
+        if real: st.dataframe(pd.DataFrame(real).sort_values('prob_num', ascending=False).drop(columns=['prob_num']), use_container_width=True)
+        else: st.info("Brak.")
+        
+        st.subheader("Cały świat (Top 200)")
+        if glo: st.dataframe(pd.DataFrame(glo).sort_values('prob_num', ascending=False).head(200).drop(columns=['prob_num']), use_container_width=True)
+        else: st.info("Brak.")
 
 # 12. SŁOWNIK
-with tabs[11]:
-    q = st.text_input("Szukaj drużyny:")
+elif selected_page == "12. Słownik":
+    st.header("Słownik Drużyn")
+    q = st.text_input("Szukaj:")
     if q:
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
+
 
