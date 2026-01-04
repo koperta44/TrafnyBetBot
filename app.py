@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="expanded" # Otwarty pasek na start (na PC), na mobile i tak będzie schowany
+    initial_sidebar_state="expanded" 
 )
 
 # --- 2. CSS (DARK MODE & MOBILE) ---
@@ -70,10 +70,17 @@ st.markdown("""
         border-right: 1px solid #333;
     }
     
+    /* Stylizacja głównego menu wyboru (Selectbox) */
+    .stSelectbox > div > div {
+        background-color: #2d2d2d !important;
+        color: white !important;
+        font-size: 16px !important;
+    }
+    
     /* MARGINESY MOBILE */
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 3rem !important; /* Miejsce na strzałkę */
+            padding-top: 3rem !important; 
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
         }
@@ -111,9 +118,8 @@ def pobierz_dane(ile_lat):
     sezony = [f"{i:02d}{i+1:02d}" for i in range(start_y, curr_y+1)]; sezony.reverse()
     wszystkie = []
     
-    # Status w sidebarze
     status = st.sidebar.empty()
-    status.info("⏳ Łączenie...")
+    status.info("Łączenie...")
     
     for s in sezony:
         for n, k in LIGI_KODY.items():
@@ -167,56 +173,53 @@ def find_teams(df, h, a):
     return rh, ra
 
 # ==============================================================================
-# PASEK BOCZNY (SIDEBAR) - TU JEST CAŁE MENU I STEROWANIE
+# PASEK BOCZNY (SIDEBAR) - MENU I STEROWANIE
 # ==============================================================================
 with st.sidebar:
-    # 1. LOGO
     try: st.image("icon.png", width=120)
     except: st.title("TrafnyBetBot")
     
     st.markdown("---")
     
-    # 2. NAWIGACJA (WYBÓR ZAKŁADKI) - TERAZ TUTAJ!
-    st.header("📂 MENU GŁÓWNE")
+    # 2. NAWIGACJA (USUNIĘTY FOLDER)
+    st.header("MENU GŁÓWNE")
     menu_options = [
         "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
         "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
         "10. BTTS", "11. Perełki", "12. Słownik"
     ]
-    # Przeniesienie wyboru do paska bocznego
     selected_page = st.selectbox("Wybierz narzędzie:", menu_options, label_visibility="collapsed")
     
     st.markdown("---")
     
-    # 3. KONFIGURACJA BAZY
-    with st.expander("⚙️ BAZA DANYCH (Aktualizacja)"):
-        opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
-        wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=1)
-        
-        if st.button("POBIERZ / ODŚWIEŻ"):
-            with st.spinner("Pobieranie..."):
-                st.session_state['df'] = pobierz_dane(opcje[wybor])
-            st.success(f"Gotowe! Mecze: {len(st.session_state['df'])}")
+    # 3. KONFIGURACJA BAZY (USUNIĘTA ZĘBATKA)
+    st.markdown("### Baza Danych")
+    opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
+    wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=1)
+    
+    if st.button("POBIERZ / ODŚWIEŻ"):
+        with st.spinner("Pobieranie..."):
+            st.session_state['df'] = pobierz_dane(opcje[wybor])
+        st.success(f"Gotowe! Mecze: {len(st.session_state['df'])}")
 
 # --- GŁÓWNY EKRAN ---
 
-# Logo i Tytuł na głównej (dla pewności, że widać gdzie jesteśmy)
+# Logo i Tytuł na głównej
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
     try: st.image("icon.png", width=50)
     except: st.write("⚽")
 with col_title:
-    # Wyświetlamy nazwę aktualnie wybranej zakładki jako nagłówek
     st.title(selected_page)
 
 if 'df' not in st.session_state:
-    st.warning("⚠️ Baza danych jest pusta.")
+    st.warning("Baza danych jest pusta.") # USUNIĘTY WYKRZYKNIK
     st.info("Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę w sekcji 'Baza Danych'.")
     st.stop()
 
 df = st.session_state['df']
 
-# --- LOGIKA MODUŁÓW (W ZALEŻNOŚCI OD WYBORU W SIDEBARZE) ---
+# --- LOGIKA MODUŁÓW ---
 
 # 1. SCHEMATY
 if selected_page == "1. Schematy":
@@ -329,32 +332,55 @@ elif selected_page == "6. Remisy":
             st.metric("Szansa", f"{(p1+p2)/2:.1f}%")
 
 # 7. WYNIK
-elif selected_page == "7. Dokładny Wynik":
+elif selected_page == "7. Wynik":
     c1, c2 = st.columns(2); h7=c1.text_input("H:", key="t7h"); a7=c2.text_input("A:", key="t7a")
     if st.button("SYMULUJ"):
         rh, ra = find_teams(df, h7, a7)
-        if rh:
+        if rh and ra:
             try:
-                l=df[df['HomeTeam']==rh]['Liga'].iloc[0]; dfl=df[df['Liga']==l].tail(500)
-                avg_hg=dfl['FTHG'].mean(); avg_ag=dfl['FTAG'].mean()
-                mh=df[df['HomeTeam']==rh].tail(20); ma=df[df['AwayTeam']==ra].tail(20)
-                ha=mh['FTHG'].mean()/avg_hg; hd=mh['FTAG'].mean()/avg_ag
-                aa=ma['FTAG'].mean()/avg_ag; ad=ma['FTHG'].mean()/avg_hg
-                xg_h=ha*ad*avg_hg; xg_a=aa*hd*avg_ag
-                st.write(f"xG: {xg_h:.2f} - {xg_a:.2f}")
-                res=[]
-                for i in range(5):
-                    for j in range(5):
-                        p=(math.exp(-xg_h)*(xg_h**i)/math.factorial(i)) * (math.exp(-xg_a)*(xg_a**j)/math.factorial(j))*100
-                        if p>5: res.append((f"{i}:{j}", p))
-                res.sort(key=lambda x:x[1], reverse=True)
-                for r in res: st.write(f"{r[0]} ({r[1]:.1f}%)")
-            except: st.error("Błąd.")
+                match_row = df[df['HomeTeam'] == rh].iloc[-1] if not df[df['HomeTeam'] == rh].empty else None
+                if match_row is not None:
+                    liga = match_row['Liga']
+                    dfl = df[df['Liga']==liga].tail(500)
+                    avg_hg = dfl['FTHG'].mean() if not dfl.empty else 1.3
+                    avg_ag = dfl['FTAG'].mean() if not dfl.empty else 1.1
+                else:
+                    avg_hg = 1.3; avg_ag = 1.1
+
+                if avg_hg == 0: avg_hg = 1.0 
+                if avg_ag == 0: avg_ag = 1.0
+
+                mh = df[df['HomeTeam']==rh].tail(20)
+                ma = df[df['AwayTeam']==ra].tail(20)
+                
+                if not mh.empty and not ma.empty:
+                    ha = mh['FTHG'].mean()/avg_hg
+                    hd = mh['FTAG'].mean()/avg_ag
+                    aa = ma['FTAG'].mean()/avg_ag
+                    ad = ma['FTHG'].mean()/avg_hg
+                    
+                    xg_h = ha * ad * avg_hg
+                    xg_a = aa * hd * avg_ag
+                    
+                    st.write(f"**xG:** {rh} {xg_h:.2f} - {xg_a:.2f} {ra}")
+                    
+                    def poisson(k, lam): return (math.exp(-lam)*(lam**k))/math.factorial(k)
+                    res=[]
+                    for i in range(5):
+                        for j in range(5):
+                            p = poisson(i, xg_h) * poisson(j, xg_a) * 100
+                            if p > 5: res.append((f"{i}:{j}", p))
+                    res.sort(key=lambda x:x[1], reverse=True)
+                    for r in res: st.write(f"{r[0]} ({r[1]:.1f}%)")
+                else:
+                    st.warning("Za mało meczów.")
+            except Exception as e: 
+                st.error(f"Błąd obliczeń: {e}")
 
 # 8. ROŻNE
 elif selected_page == "8. Rożne":
     c1, c2 = st.columns(2); h8=c1.text_input("H:", key="t8h"); a8=c2.text_input("A:", key="t8a")
-    if st.button("Analiza Rożnych"):
+    if st.button("Analiza"):
         rh, ra = find_teams(df, h8, a8)
         if rh:
             dfc = df[df['HC']>0]
@@ -367,7 +393,7 @@ elif selected_page == "8. Rożne":
 # 9. KARTKI
 elif selected_page == "9. Kartki":
     c1, c2 = st.columns(2); h9=c1.text_input("H:", key="t9h"); a9=c2.text_input("A:", key="t9a")
-    if st.button("Analiza Kartek"):
+    if st.button("Analiza"):
         rh, ra = find_teams(df, h9, a9)
         if rh:
             dfc = df[(df['HY']+df['AY'])>0]
@@ -380,7 +406,7 @@ elif selected_page == "9. Kartki":
 # 10. BTTS
 elif selected_page == "10. BTTS":
     c1, c2 = st.columns(2); h10=c1.text_input("H:", key="t10h"); a10=c2.text_input("A:", key="t10a")
-    if st.button("Sprawdź BTTS"):
+    if st.button("Sprawdź"):
         rh, ra = find_teams(df, h10, a10)
         if rh:
             mh=df[df['HomeTeam']==rh]; hp=len(mh[(mh['FTHG']>0)&(mh['FTAG']>0)])/len(mh)*100 if len(mh) else 0
@@ -415,11 +441,11 @@ elif selected_page == "11. Perełki":
                         glo.append(desc)
                         if d1['L'] == d2['L']: real.append(desc)
                         
-        st.subheader("Ta sama liga (Realne)")
+        st.write("Ta sama liga (Realne)")
         if real: st.dataframe(pd.DataFrame(real).sort_values('prob_num', ascending=False).drop(columns=['prob_num']), use_container_width=True)
         else: st.info("Brak.")
         
-        st.subheader("Cały świat (Top 200)")
+        st.write("Cały świat (Top 200)")
         if glo: st.dataframe(pd.DataFrame(glo).sort_values('prob_num', ascending=False).head(200).drop(columns=['prob_num']), use_container_width=True)
         else: st.info("Brak.")
 
@@ -430,4 +456,3 @@ elif selected_page == "12. Słownik":
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
-
