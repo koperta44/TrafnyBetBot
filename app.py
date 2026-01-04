@@ -16,24 +16,24 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="collapsed" # Pasek ukryty na start (kliknij strzałkę >, aby otworzyć)
+    initial_sidebar_state="expanded" # Otwarty pasek na start (na PC), na mobile i tak będzie schowany
 )
 
-# --- 2. CSS (NAPRAWIONY - STRZAŁKA WIDOCZNA) ---
+# --- 2. CSS (DARK MODE & MOBILE) ---
 st.markdown("""
     <style>
-    /* Ukrywamy tylko stopkę i menu hamburgera z prawej (opcjonalnie), 
-       ALE ZOSTAWIAMY HEADER, ŻEBY BYŁO WIDAĆ STRZAŁKĘ OD SIDEBARA */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    /* Ukrycie zbędnych elementów */
+    [data-testid="stToolbar"] {visibility: hidden !important;}
+    header {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
     
-    /* Wymuszenie ciemnego tła */
+    /* Ciemne tło */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* PRZYCISKI - FIOLET */
+    /* Stylizacja Przycisków - FIOLET */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -50,19 +50,13 @@ st.markdown("""
         border: 1px solid white;
     }
     
-    /* INPUTY */
+    /* Inputy i Selectboxy */
     [data-testid="stTextInput"] input {
         background-color: #2d2d2d;
         color: white;
         border: 1px solid #444;
     }
     
-    /* SELECTBOX */
-    .stSelectbox > div > div {
-        background-color: #2d2d2d !important;
-        color: white !important;
-    }
-
     /* WYŚRODKOWANIE LOGO W SIDEBARZE */
     [data-testid="stSidebar"] img {
         display: block;
@@ -70,7 +64,13 @@ st.markdown("""
         margin-right: auto;
     }
     
-    /* POPRAWKA MARGINESÓW NA MOBILE */
+    /* STYLIZACJA SIDEBARA (MENU) */
+    [data-testid="stSidebar"] {
+        background-color: #252526;
+        border-right: 1px solid #333;
+    }
+    
+    /* MARGINESY MOBILE */
     @media (max-width: 768px) {
         .block-container {
             padding-top: 3rem !important; /* Miejsce na strzałkę */
@@ -111,8 +111,9 @@ def pobierz_dane(ile_lat):
     sezony = [f"{i:02d}{i+1:02d}" for i in range(start_y, curr_y+1)]; sezony.reverse()
     wszystkie = []
     
+    # Status w sidebarze
     status = st.sidebar.empty()
-    status.info("⏳ Pobieranie...")
+    status.info("⏳ Łączenie...")
     
     for s in sezony:
         for n, k in LIGI_KODY.items():
@@ -165,55 +166,60 @@ def find_teams(df, h, a):
     ra = next((t for t in all_t if a.lower() in str(t).lower()), None)
     return rh, ra
 
-# --- SIDEBAR (PANEL KONFIGURACJI) ---
+# ==============================================================================
+# PASEK BOCZNY (SIDEBAR) - TU JEST CAŁE MENU I STEROWANIE
+# ==============================================================================
 with st.sidebar:
+    # 1. LOGO
     try: st.image("icon.png", width=120)
     except: st.title("TrafnyBetBot")
     
-    st.markdown("### ⚙️ Baza Danych")
-    opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
-    wybor = st.selectbox("Zakres:", list(opcje.keys()), index=1)
+    st.markdown("---")
     
-    if st.button("POBIERZ / ODŚWIEŻ"):
-        with st.spinner("Pobieranie..."):
-            st.session_state['df'] = pobierz_dane(opcje[wybor])
-        st.success(f"Gotowe! Mecze: {len(st.session_state['df'])}")
+    # 2. NAWIGACJA (WYBÓR ZAKŁADKI) - TERAZ TUTAJ!
+    st.header("📂 MENU GŁÓWNE")
+    menu_options = [
+        "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
+        "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
+        "10. BTTS", "11. Perełki", "12. Słownik"
+    ]
+    # Przeniesienie wyboru do paska bocznego
+    selected_page = st.selectbox("Wybierz narzędzie:", menu_options, label_visibility="collapsed")
     
     st.markdown("---")
-    st.info("Pasek boczny służy tylko do pobierania bazy. Reszta w głównym oknie.")
+    
+    # 3. KONFIGURACJA BAZY
+    with st.expander("⚙️ BAZA DANYCH (Aktualizacja)"):
+        opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
+        wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=1)
+        
+        if st.button("POBIERZ / ODŚWIEŻ"):
+            with st.spinner("Pobieranie..."):
+                st.session_state['df'] = pobierz_dane(opcje[wybor])
+            st.success(f"Gotowe! Mecze: {len(st.session_state['df'])}")
 
-# --- GŁÓWNY INTERFEJS ---
+# --- GŁÓWNY EKRAN ---
 
-# Logo i Tytuł na głównej
+# Logo i Tytuł na głównej (dla pewności, że widać gdzie jesteśmy)
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
-    try: st.image("icon.png", width=60)
+    try: st.image("icon.png", width=50)
     except: st.write("⚽")
 with col_title:
-    st.title("TrafnyBetBot")
+    # Wyświetlamy nazwę aktualnie wybranej zakładki jako nagłówek
+    st.title(selected_page)
 
 if 'df' not in st.session_state:
     st.warning("⚠️ Baza danych jest pusta.")
-    st.info("Kliknij strzałkę '>' w lewym górnym rogu (Pasek Boczny), aby pobrać bazę.")
+    st.info("Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę w sekcji 'Baza Danych'.")
     st.stop()
 
 df = st.session_state['df']
 
-# --- NAWIGACJA (LISTA ROZWIJANA DLA MOBILE) ---
-menu_options = [
-    "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
-    "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
-    "10. BTTS", "11. Perełki", "12. Słownik"
-]
-
-selected_page = st.selectbox("≡ WYBIERZ NARZĘDZIE:", menu_options)
-st.markdown("---")
-
-# --- LOGIKA MODUŁÓW ---
+# --- LOGIKA MODUŁÓW (W ZALEŻNOŚCI OD WYBORU W SIDEBARZE) ---
 
 # 1. SCHEMATY
 if selected_page == "1. Schematy":
-    st.header("Globalne Trendy")
     if st.button("Skanuj Bazę"):
         teams = set(df['HomeTeam'])|set(df['AwayTeam']); res=[]
         for t in teams:
@@ -222,21 +228,22 @@ if selected_page == "1. Schematy":
             hard = len(d[((d['HTR']=='H')&(d['FTR']=='A'))|((d['HTR']=='A')&(d['FTR']=='H'))])
             if hard>0: res.append({'Drużyna':t, 'Mecze':len(d), 'Łamaki':hard})
         
-        st.subheader("Top Drużyny (Łamaki)")
-        if res: st.dataframe(pd.DataFrame(res).sort_values('Łamaki', ascending=False).head(20), use_container_width=True)
-        
-        st.subheader("Top Pary H2H")
-        p = df[((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))]
-        if not p.empty:
-            cnt = p.groupby(['HomeTeam','AwayTeam']).size().reset_index(name='Ilość')
-            st.dataframe(cnt[cnt['Ilość']>=2].sort_values('Ilość', ascending=False), use_container_width=True)
-        else: st.info("Brak par.")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write("Top Drużyny (Łamaki)")
+            if res: st.dataframe(pd.DataFrame(res).sort_values('Łamaki', ascending=False).head(20), use_container_width=True)
+        with c2:
+            st.write("Top Pary H2H")
+            p = df[((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))]
+            if not p.empty:
+                cnt = p.groupby(['HomeTeam','AwayTeam']).size().reset_index(name='Ilość')
+                st.dataframe(cnt[cnt['Ilość']>=2].sort_values('Ilość', ascending=False), use_container_width=True)
+            else: st.info("Brak par.")
 
 # 2. PRZECIWNIK
 elif selected_page == "2. Przeciwnik":
-    st.header("Szukaj Ofiary")
     mt = st.text_input("Gospodarz (Ty):")
-    if st.button("Szukaj") and mt:
+    if st.button("Szukaj Ofiary") and mt:
         rh, _ = find_teams(df, mt, "x")
         if rh:
             cand=[]
@@ -250,17 +257,18 @@ elif selected_page == "2. Przeciwnik":
 
 # 3. ŁAMAK
 elif selected_page == "3. Łamak 1/2":
-    st.header("Analiza 1/2")
     c1, c2 = st.columns(2)
     h = c1.text_input("Gosp:", key="t3h"); a = c2.text_input("Gość:", key="t3a")
     if st.button("Analizuj"):
         rh, ra = find_teams(df, h, a)
         if rh and ra:
+            # A. HISTORIA
             h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
             h_lam = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
             a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
             a_lam = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
             
+            # B. SCENARIUSZ
             mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
             h_lead = len(mh[mh['HTR']=='H']); h_choke = len(mh[(mh['HTR']=='H')&(mh['FTR']=='A')])
             hr = (h_choke/h_lead*100) if h_lead else 0
@@ -275,7 +283,6 @@ elif selected_page == "3. Łamak 1/2":
 
 # 4. H2H KALENDARZ
 elif selected_page == "4. H2H Kalendarz":
-    st.header("Serie H2H w miesiącu")
     m = st.slider("Miesiąc:", 1, 12, datetime.now().month)
     if st.button("Szukaj Serii"):
         lam = df[(((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))) & (df['Miesiac']==m)]
@@ -293,7 +300,6 @@ elif selected_page == "4. H2H Kalendarz":
 
 # 5. GOLE
 elif selected_page == "5. Gole":
-    st.header("Gole Over/Under")
     c1, c2 = st.columns(2)
     h5 = c1.text_input("H:", key="t5h"); a5 = c2.text_input("A:", key="t5a")
     if st.button("Oblicz"):
@@ -314,7 +320,6 @@ elif selected_page == "5. Gole":
 
 # 6. REMISY
 elif selected_page == "6. Remisy":
-    st.header("Remis")
     c1, c2 = st.columns(2); h6=c1.text_input("H:", key="t6h"); a6=c2.text_input("A:", key="t6a")
     if st.button("Sprawdź"):
         rh, ra = find_teams(df, h6, a6)
@@ -325,7 +330,6 @@ elif selected_page == "6. Remisy":
 
 # 7. WYNIK
 elif selected_page == "7. Dokładny Wynik":
-    st.header("Symulacja Wyniku")
     c1, c2 = st.columns(2); h7=c1.text_input("H:", key="t7h"); a7=c2.text_input("A:", key="t7a")
     if st.button("SYMULUJ"):
         rh, ra = find_teams(df, h7, a7)
@@ -349,7 +353,6 @@ elif selected_page == "7. Dokładny Wynik":
 
 # 8. ROŻNE
 elif selected_page == "8. Rożne":
-    st.header("Rożne")
     c1, c2 = st.columns(2); h8=c1.text_input("H:", key="t8h"); a8=c2.text_input("A:", key="t8a")
     if st.button("Analiza Rożnych"):
         rh, ra = find_teams(df, h8, a8)
@@ -363,7 +366,6 @@ elif selected_page == "8. Rożne":
 
 # 9. KARTKI
 elif selected_page == "9. Kartki":
-    st.header("Kartki")
     c1, c2 = st.columns(2); h9=c1.text_input("H:", key="t9h"); a9=c2.text_input("A:", key="t9a")
     if st.button("Analiza Kartek"):
         rh, ra = find_teams(df, h9, a9)
@@ -377,7 +379,6 @@ elif selected_page == "9. Kartki":
 
 # 10. BTTS
 elif selected_page == "10. BTTS":
-    st.header("BTTS")
     c1, c2 = st.columns(2); h10=c1.text_input("H:", key="t10h"); a10=c2.text_input("A:", key="t10a")
     if st.button("Sprawdź BTTS"):
         rh, ra = find_teams(df, h10, a10)
@@ -388,7 +389,6 @@ elif selected_page == "10. BTTS":
 
 # 11. PEREŁKI
 elif selected_page == "11. Perełki":
-    st.header("Generator Perełek")
     thr = st.slider("Próg szansy (%)", 10, 100, 30)
     if st.button("Generuj Listy"):
         with st.spinner("Przetwarzanie..."):
@@ -425,7 +425,6 @@ elif selected_page == "11. Perełki":
 
 # 12. SŁOWNIK
 elif selected_page == "12. Słownik":
-    st.header("Słownik Drużyn")
     q = st.text_input("Szukaj:")
     if q:
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
