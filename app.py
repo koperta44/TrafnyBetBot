@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="expanded" 
+    initial_sidebar_state="collapsed"
 )
 
 # --- 2. CSS (DARK MODE & MOBILE) ---
@@ -33,7 +33,7 @@ st.markdown("""
         color: #e0e0e0;
     }
     
-    /* Stylizacja Przycisków - FIOLET */
+    /* Stylizacja Przycisków */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -57,20 +57,20 @@ st.markdown("""
         border: 1px solid #444;
     }
     
-    /* WYŚRODKOWANIE LOGO W SIDEBARZE */
+    /* Logo w sidebarze */
     [data-testid="stSidebar"] img {
         display: block;
         margin-left: auto;
         margin-right: auto;
     }
     
-    /* STYLIZACJA SIDEBARA (MENU) */
+    /* Stylizacja Sidebara */
     [data-testid="stSidebar"] {
         background-color: #252526;
         border-right: 1px solid #333;
     }
     
-    /* Stylizacja głównego menu wyboru (Selectbox) */
+    /* Stylizacja głównego menu wyboru */
     .stSelectbox > div > div {
         background-color: #2d2d2d !important;
         color: white !important;
@@ -111,7 +111,47 @@ LIGI_KODY = {
     "Rosja - Premier League": "RUS", "USA - MLS": "USA", "Meksyk - Liga MX": "MEX",
     "Brazylia - Serie A": "BRA", "Argentyna - Liga Pro": "ARG", "Chiny - Super League": "CHN", "Japonia - J-League": "JPN"
 }
-# --- FUNKCJE ---
+# --- FUNKCJE (ZOPTYMALIZOWANE DLA SAFARI) ---
+
+def clean_df(df, n, s):
+    # Usunięcie spacji z nazw kolumn
+    df.columns = [c.strip() for c in df.columns]
+    
+    # Mapowanie nazw
+    df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
+    
+    req=['Date','HomeTeam','AwayTeam','HTR','FTR','FTHG','FTAG']
+    opt=['HC','AC','HY','AY','HR','AR']
+    
+    # OPTYMALIZACJA PAMIĘCI: Konwersja na lżejsze typy (int8/int16)
+    for c in opt: 
+        if c not in df.columns: 
+            df[c] = 0
+        else: 
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8') # Rożne/kartki mieszczą się w 127
+            
+    if 'FTHG' in df.columns: df['FTHG'] = pd.to_numeric(df['FTHG'], errors='coerce').fillna(0).astype('int8')
+    if 'FTAG' in df.columns: df['FTAG'] = pd.to_numeric(df['FTAG'], errors='coerce').fillna(0).astype('int8')
+
+    if 'FTR' not in df.columns: df['FTR']='D'
+    
+    # OPTYMALIZACJA TEKSTU: Konwersja na 'category' drastycznie zmniejsza zużycie RAM
+    if 'HomeTeam' in df.columns: df['HomeTeam'] = df['HomeTeam'].astype(str)
+    if 'AwayTeam' in df.columns: df['AwayTeam'] = df['AwayTeam'].astype(str)
+    
+    if set(['HomeTeam','AwayTeam']).issubset(df.columns):
+        df['Liga'] = n
+        
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+            df['Rok'] = df['Date'].dt.year.fillna(0).astype('int16')
+            df['Miesiac'] = df['Date'].dt.month.fillna(0).astype('int8')
+            
+        cols_to_keep = list(set(req+opt+['Liga','Rok','Miesiac']) & set(df.columns))
+        return df[cols_to_keep]
+        
+    return pd.DataFrame()
+
 @st.cache_data(ttl=3600)
 def pobierz_dane(ile_lat):
     curr_y = 25; start_y = curr_y - ile_lat
@@ -121,16 +161,7 @@ def pobierz_dane(ile_lat):
     status = st.sidebar.empty()
     status.info("Łączenie...")
     
-    for s in sezony:
-        for n, k in LIGI_KODY.items():
-            try:
-                r = requests.get(f"https://www.football-data.co.uk/mmz4281/{s}/{k}.csv", timeout=1)
-                if r.status_code==200:
-                    df = pd.read_csv(io.StringIO(r.text))
-                    df = clean_df(df, n, s)
-                    wszystkie.append(df)
-            except: pass
-            
+    # 1. Pobieranie Current (Najważniejsze)
     for n, k in LIGI_KODY.items():
         try:
             r = requests.get(f"https://www.football-data.co.uk/new/{k}.csv", timeout=1)
@@ -138,6 +169,18 @@ def pobierz_dane(ile_lat):
                 df = pd.read_csv(io.StringIO(r.text)); df = clean_df(df, n, "Current")
                 wszystkie.append(df)
         except: pass
+    
+    # 2. Pobieranie Historii (jeśli wybrano >1 rok)
+    if ile_lat > 0:
+        for s in sezony:
+            for n, k in LIGI_KODY.items():
+                try:
+                    r = requests.get(f"https://www.football-data.co.uk/mmz4281/{s}/{k}.csv", timeout=1)
+                    if r.status_code==200:
+                        df = pd.read_csv(io.StringIO(r.text))
+                        df = clean_df(df, n, s)
+                        wszystkie.append(df)
+                except: pass
         
     status.empty()
     
@@ -149,31 +192,15 @@ def pobierz_dane(ile_lat):
         return final
     return pd.DataFrame()
 
-def clean_df(df, n, s):
-    df.columns = [c.strip() for c in df.columns]
-    df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
-    req=['Date','HomeTeam','AwayTeam','HTR','FTR','FTHG','FTAG']
-    opt=['HC','AC','HY','AY','HR','AR']
-    for c in opt: 
-        if c not in df.columns: df[c]=0
-        else: df[c]=pd.to_numeric(df[c],errors='coerce').fillna(0).astype(int)
-    if 'FTR' not in df.columns: df['FTR']='D'
-    if set(['HomeTeam','AwayTeam']).issubset(df.columns):
-        df['Liga']=n
-        if 'Date' in df.columns:
-            df['Date']=pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
-            df['Rok']=df['Date'].dt.year; df['Miesiac']=df['Date'].dt.month
-        return df[list(set(req+opt+['Liga','Rok','Miesiac'])&set(df.columns))]
-    return pd.DataFrame()
-
 def find_teams(df, h, a):
+    if df.empty: return None, None
     all_t = set(df['HomeTeam'])|set(df['AwayTeam'])
-    rh = next((t for t in all_t if h.lower() in str(t).lower()), None)
-    ra = next((t for t in all_t if a.lower() in str(t).lower()), None)
+    rh = next((t for t in all_t if h.lower() in t.lower()), None)
+    ra = next((t for t in all_t if a.lower() in t.lower()), None)
     return rh, ra
 
 # ==============================================================================
-# PASEK BOCZNY (SIDEBAR) - MENU I STEROWANIE
+# PASEK BOCZNY (SIDEBAR)
 # ==============================================================================
 with st.sidebar:
     try: st.image("icon.png", width=120)
@@ -181,21 +208,11 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 2. NAWIGACJA (USUNIĘTY FOLDER)
-    st.header("MENU GŁÓWNE")
-    menu_options = [
-        "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
-        "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
-        "10. BTTS", "11. Perełki", "12. Słownik"
-    ]
-    selected_page = st.selectbox("Wybierz narzędzie:", menu_options, label_visibility="collapsed")
-    
-    st.markdown("---")
-    
-    # 3. KONFIGURACJA BAZY (USUNIĘTA ZĘBATKA)
+    # KONFIGURACJA BAZY
     st.markdown("### Baza Danych")
-    opcje = {"1 rok":1, "5 lat":5, "10 lat":10, "15 lat":15}
-    wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=1)
+    # Domyślnie 1 rok dla szybkości na mobile
+    opcje = {"1 rok (Szybko)":1, "5 lat":5, "10 lat":10, "15 lat":15}
+    wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=0)
     
     if st.button("POBIERZ / ODŚWIEŻ"):
         with st.spinner("Pobieranie..."):
@@ -204,20 +221,28 @@ with st.sidebar:
 
 # --- GŁÓWNY EKRAN ---
 
-# Logo i Tytuł na głównej
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
     try: st.image("icon.png", width=50)
     except: st.write("⚽")
 with col_title:
-    st.title(selected_page)
+    st.title("TrafnyBetBot")
 
-if 'df' not in st.session_state:
-    st.warning("Baza danych jest pusta.") # USUNIĘTY WYKRZYKNIK
+if 'df' not in st.session_state or st.session_state['df'].empty:
+    st.warning("Baza danych jest pusta.")
     st.info("Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę w sekcji 'Baza Danych'.")
     st.stop()
 
 df = st.session_state['df']
+
+# --- NAWIGACJA (LISTA) ---
+menu_options = [
+    "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
+    "5. Gole", "6. Remisy", "7. Wynik", "8. Rożne", "9. Kartki", 
+    "10. BTTS", "11. Perełki", "12. Słownik"
+]
+selected_page = st.selectbox("Wybierz narzędzie:", menu_options)
+st.markdown("---")
 
 # --- LOGIKA MODUŁÓW ---
 
@@ -227,7 +252,7 @@ if selected_page == "1. Schematy":
         teams = set(df['HomeTeam'])|set(df['AwayTeam']); res=[]
         for t in teams:
             d = df[(df['HomeTeam']==t)|(df['AwayTeam']==t)]
-            if len(d)<10: continue
+            if len(d)<5: continue
             hard = len(d[((d['HTR']=='H')&(d['FTR']=='A'))|((d['HTR']=='A')&(d['FTR']=='H'))])
             if hard>0: res.append({'Drużyna':t, 'Mecze':len(d), 'Łamaki':hard})
         
@@ -265,13 +290,12 @@ elif selected_page == "3. Łamak 1/2":
     if st.button("Analizuj"):
         rh, ra = find_teams(df, h, a)
         if rh and ra:
-            # A. HISTORIA
             h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
             h_lam = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
+            
             a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
             a_lam = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
             
-            # B. SCENARIUSZ
             mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
             h_lead = len(mh[mh['HTR']=='H']); h_choke = len(mh[(mh['HTR']=='H')&(mh['FTR']=='A')])
             hr = (h_choke/h_lead*100) if h_lead else 0
@@ -279,10 +303,10 @@ elif selected_page == "3. Łamak 1/2":
             ac = (a_come/a_trail*100) if a_trail else 0
             
             st.metric("Szansa Matematyczna", f"{(hr+ac)/2:.1f}%")
-            st.write(f"**{rh}:** {h_lam} łamaków w historii.")
-            st.write(f"**{ra}:** {a_lam} łamaków w historii.")
-            st.write(f"**Dom:** Oddał prowadzenie {h_choke} razy ({hr:.1f}%)")
-            st.write(f"**Wyjazd:** Odrobił stratę {a_come} razy ({ac:.1f}%)")
+            st.write(f"**{rh} (Ogółem):** {h_lam} łamaków w historii.")
+            st.write(f"**{ra} (Ogółem):** {a_lam} łamaków w historii.")
+            st.write(f"**{rh} (Dom):** Oddał prowadzenie {h_choke} razy ({hr:.1f}%)")
+            st.write(f"**{ra} (Wyjazd):** Odrobił stratę {a_come} razy ({ac:.1f}%)")
 
 # 4. H2H KALENDARZ
 elif selected_page == "4. H2H Kalendarz":
@@ -296,9 +320,8 @@ elif selected_page == "4. H2H Kalendarz":
                 yrs = sorted(g['Rok'].unique(), reverse=True)
                 lata_str = " -> ".join([str(int(y)) for y in yrs])
                 res.append({'Mecz': f"{h_t} vs {a_t}", 'Lata': lata_str})
-            
             if res: st.dataframe(pd.DataFrame(res), use_container_width=True)
-            else: st.info("Brak.")
+            else: st.info("Brak par.")
         else: st.info("Brak łamaków w tym miesiącu.")
 
 # 5. GOLE
@@ -338,6 +361,7 @@ elif selected_page == "7. Wynik":
         rh, ra = find_teams(df, h7, a7)
         if rh and ra:
             try:
+                # Zabezpieczenie przed brakiem danych
                 match_row = df[df['HomeTeam'] == rh].iloc[-1] if not df[df['HomeTeam'] == rh].empty else None
                 if match_row is not None:
                     liga = match_row['Liga']
@@ -375,7 +399,7 @@ elif selected_page == "7. Wynik":
                 else:
                     st.warning("Za mało meczów.")
             except Exception as e: 
-                st.error(f"Błąd obliczeń: {e}")
+                st.error(f"Błąd: {e}")
 
 # 8. ROŻNE
 elif selected_page == "8. Rożne":
