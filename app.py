@@ -16,26 +16,38 @@ st.set_page_config(
     page_title="TrafnyBetBot",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="collapsed" # Pasek zwinięty na start (widać strzałkę >)
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS (DARK MODE & MOBILE & UKRYTE MENU) ---
+# --- 2. CSS (FIX DLA STRZAŁKI I SAFARI) ---
 st.markdown("""
     <style>
-    /* 1. UKRYWANIE MENU TECHNICZNEGO (ALE ZOSTAWIAMY STRZAŁKĘ!) */
-    #MainMenu {visibility: hidden;} /* Ukrywa trzy kropki/hamburger z prawej */
-    [data-testid="stToolbar"] {visibility: hidden;} /* Ukrywa przyciski "Deploy", "Rerun" itp. */
-    
-    /* Ukrycie stopki "Made with Streamlit" */
+    /* 1. UKRYWANIE MENU I STOPKI */
+    #MainMenu {visibility: hidden;}
+    [data-testid="stMainMenu"] {visibility: hidden;}
+    [data-testid="stToolbar"] {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* 2. Ciemne tło aplikacji */
+    /* 2. WYMUSZENIE WIDOCZNOŚCI STRZAŁKI (SIDEBAR TOGGLE) */
+    [data-testid="stSidebarCollapsedControl"] {
+        visibility: visible !important;
+        display: block !important;
+        color: #8742f5 !important; /* FIOLETOWA STRZAŁKA */
+        z-index: 999999 !important; /* ZAWSZE NA WIERZCHU */
+    }
+    
+    /* 3. USTAWIENIE NAGŁÓWKA JAKO PRZEZROCZYSTY (Żeby nie zasłaniał) */
+    header {
+        background: transparent !important;
+    }
+
+    /* 4. CIEMNY MOTYW */
     .stApp {
         background-color: #1e1e1e;
         color: #e0e0e0;
     }
     
-    /* 3. Stylizacja Przycisków - FIOLET */
+    /* 5. STYLIZACJA PRZYCISKÓW */
     div.stButton > button {
         width: 100%;
         background-color: #8742f5;
@@ -52,32 +64,30 @@ st.markdown("""
         border: 1px solid white;
     }
     
-    /* 4. Inputy i Selectboxy */
+    /* 6. INPUTY */
     [data-testid="stTextInput"] input, [data-testid="stSelectbox"] > div > div {
         background-color: #2d2d2d !important;
         color: white !important;
         border: 1px solid #444;
     }
     
-    /* 5. WYŚRODKOWANIE LOGO W SIDEBARZE */
+    /* 7. LOGO W SIDEBARZE */
     [data-testid="stSidebar"] img {
         display: block;
         margin-left: auto;
         margin-right: auto;
     }
     
-    /* 6. STYLIZACJA SIDEBARA */
-    [data-testid="stSidebar"] {
-        background-color: #252526;
-        border-right: 1px solid #333;
-    }
-    
-    /* 7. MARGINESY MOBILE - Żeby strzałka nie nachodziła na tytuł */
+    /* 8. MARGINESY MOBILE (Dostosowane pod strzałkę) */
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 3.5rem !important; 
+            padding-top: 4rem !important; /* Więcej miejsca u góry */
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
+        }
+        /* Przesunięcie strzałki nieco w dół na iPhone, żeby nie wchodziła na zegar */
+        [data-testid="stSidebarCollapsedControl"] {
+            top: 10px !important;
         }
     }
     </style>
@@ -428,5 +438,6 @@ elif selected_page == "12. Słownik":
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
+
 
 
