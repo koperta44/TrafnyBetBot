@@ -203,7 +203,7 @@ with st.sidebar:
     menu_options = [
         "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
         "5. Gole (xG)", "6. Remisy", "7. Dokładny Wynik", "8. Rożne", "9. Kartki", 
-        "10. BTTS", "11. Perełki", "12. Słownik"
+        "10. BTTS", "11. Perełki (Łamaki)", "12. Pewniaki (1X2)", "13. Słownik"
     ]
     selected_page = st.selectbox("Wybierz narzędzie:", menu_options, label_visibility="collapsed")
     st.markdown("---")
@@ -271,25 +271,17 @@ elif selected_page == "3. Łamak 1/2":
     if st.button("Analiza HT/FT"):
         rh, ra = find_teams(df, h, a)
         if rh and ra:
-            # Historia Łamaków Ogółem
             h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
             h_lam_total = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
-            
             a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
             a_lam_total = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
-            
-            # Scenariusz
             mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
             h_lead = len(mh[mh['HTR']=='H']); h_choke = len(mh[(mh['HTR']=='H')&(mh['FTR']=='A')])
             h_pct = (h_choke/h_lead*100) if h_lead > 0 else 0
-            
             a_trail = len(ma[ma['HTR']=='H']); a_come = len(ma[(ma['HTR']=='H')&(ma['FTR']=='A')])
             a_pct = (a_come/a_trail*100) if a_trail > 0 else 0
-            
             avg_prob = (h_pct + a_pct) / 2
-            
             st.metric("Szansa HT/FT 1/2", f"{avg_prob:.1f}%")
-            
             c1, c2 = st.columns(2)
             with c1:
                 st.write(f"**{rh}:**")
@@ -323,16 +315,13 @@ elif selected_page == "5. Gole (xG)":
             if metrics:
                 xg_h, xg_a = metrics['xg_h'], metrics['xg_a']
                 probs, _ = poisson_probability(xg_h, xg_a)
-                
                 st.markdown("### 📊 Prawdopodobieństwo Goli")
                 st.write(f"Przewidywane xG: {xg_h:.2f} - {xg_a:.2f}")
-                
                 c_ov, c_un = st.columns(2)
                 with c_ov:
                     st.success("OVER (Powyżej)")
                     st.write(f"**Over 1.5:** {probs['O1.5']*100:.1f}%")
                     st.write(f"**Over 2.5:** {probs['O2.5']*100:.1f}%")
-                
                 with c_un:
                     st.error("UNDER (Poniżej)")
                     st.write(f"**Under 1.5:** {(1-probs['O1.5'])*100:.1f}%")
@@ -387,9 +376,7 @@ elif selected_page == "9. Kartki":
                 h_cards = mh['HY'].mean() + mh['HR'].mean()
                 a_cards = ma['AY'].mean() + ma['AR'].mean()
                 exp_cards = (h_cards + a_cards)
-                
                 st.metric("Przewidywana liczba kartek", f"{exp_cards:.1f}")
-                
                 c_ov, c_un = st.columns(2)
                 with c_ov:
                     st.success(f"📈 OVER {math.floor(exp_cards - 0.5)}.5")
@@ -407,33 +394,98 @@ elif selected_page == "10. BTTS":
                 probs, _ = poisson_probability(metrics['xg_h'], metrics['xg_a'])
                 st.metric("Szansa BTTS", f"{probs['BTTS']*100:.1f}%")
 
-elif selected_page == "11. Perełki":
-    # ZMIANA: Zakres suwaka 10-100
-    thr = st.slider("Minimalna szansa (%)", 10, 100, 50)
-    if st.button("Szukaj"):
-        with st.spinner("Analiza..."):
+# --- NOWA ZAKŁADKA: ŁAMAKI ---
+elif selected_page == "11. Perełki (Łamaki)":
+    st.info("Ta funkcja szuka potencjalnych odwróceń meczu (HT/FT). Pamiętaj, że są to zdarzenia rzadkie!")
+    thr = st.slider("Minimalny potencjał (%)", 5, 50, 10)
+    
+    if st.button("Szukaj Łamaków (1/2 i 2/1)"):
+        with st.spinner("Analizuję historię..."):
+            matches = []
+            recent = df.tail(300) # Ostatnie 300 meczów do wyłowienia par
+            
+            # Skanujemy unikalne pary
+            unique_pairs = recent[['HomeTeam', 'AwayTeam']].drop_duplicates()
+            
+            for index, row in unique_pairs.iterrows():
+                h, a = row['HomeTeam'], row['AwayTeam']
+                
+                # Pobieramy historię dla tej pary (lub drużyn ogólnie)
+                mh = df[df['HomeTeam'] == h]
+                ma = df[df['AwayTeam'] == a]
+                
+                if len(mh) < 5 or len(ma) < 5: continue
+                
+                # 1. SCENARIUSZ 1/2 (Dom prowadzi HT -> Gość wygrywa FT)
+                # Dom: Ile razy oddał prowadzenie (HT:H -> FT:A)
+                h_lead = len(mh[mh['HTR']=='H'])
+                h_loss = len(mh[(mh['HTR']=='H') & (mh['FTR']=='A')])
+                h_choke_ratio = (h_loss / h_lead) if h_lead > 0 else 0
+                
+                # Wyjazd: Ile razy odrobił (HT:H -> FT:A)
+                a_trail = len(ma[ma['HTR']=='H'])
+                a_win = len(ma[(ma['HTR']=='H') & (ma['FTR']=='A')])
+                a_comeback_ratio = (a_win / a_trail) if a_trail > 0 else 0
+                
+                prob_1_2 = ((h_choke_ratio + a_comeback_ratio) / 2) * 100
+                
+                # 2. SCENARIUSZ 2/1 (Gość prowadzi HT -> Dom wygrywa FT)
+                # Dom: Ile razy odrobił (HT:A -> FT:H)
+                h_trail_2 = len(mh[mh['HTR']=='A'])
+                h_win_2 = len(mh[(mh['HTR']=='A') & (mh['FTR']=='H')])
+                h_comeback_ratio = (h_win_2 / h_trail_2) if h_trail_2 > 0 else 0
+                
+                # Wyjazd: Ile razy oddał prowadzenie (HT:A -> FT:H)
+                a_lead_2 = len(ma[ma['HTR']=='A'])
+                a_loss_2 = len(ma[(ma['HTR']=='A') & (ma['FTR']=='H')])
+                a_choke_ratio = (a_loss_2 / a_lead_2) if a_lead_2 > 0 else 0
+                
+                prob_2_1 = ((h_comeback_ratio + a_choke_ratio) / 2) * 100
+                
+                if prob_1_2 >= thr:
+                    matches.append({'Mecz': f"{h} vs {a}", 'Typ': '1/2 (Łamak)', 'Potencjał': f"{prob_1_2:.1f}%"})
+                
+                if prob_2_1 >= thr:
+                    matches.append({'Mecz': f"{h} vs {a}", 'Typ': '2/1 (Łamak)', 'Potencjał': f"{prob_2_1:.1f}%"})
+            
+            if matches:
+                st.success(f"Znaleziono {len(matches)} kandydatów!")
+                st.dataframe(pd.DataFrame(matches).sort_values('Potencjał', ascending=False), use_container_width=True)
+            else:
+                st.warning("Brak kandydatów spełniających kryteria. Zmniejsz suwak.")
+
+# --- NOWA ZAKŁADKA: PEWNIAKI 1X2 ---
+elif selected_page == "12. Pewniaki (1X2)":
+    st.info("Szukam wysokiego prawdopodobieństwa na wygraną Gospodarza (1) lub Gościa (2).")
+    thr = st.slider("Minimalna pewność (%)", 40, 95, 60)
+    
+    if st.button("Szukaj Pewniaków"):
+        with st.spinner("Analiza xG i Poissona..."):
             matches = []
             recent = df.tail(200)
-            for i, row in recent.iterrows():
+            
+            for index, row in recent.iterrows():
                 h, a = row['HomeTeam'], row['AwayTeam']
                 metrics = calculate_metrics(df, h, a)
                 if metrics:
                     probs, _ = poisson_probability(metrics['xg_h'], metrics['xg_a'])
-                    if probs['1']*100 >= thr: matches.append({'Mecz': f"{h}-{a}", 'Typ': '1', 'Szansa': f"{probs['1']*100:.0f}%"})
-            if matches: st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else: st.info("Brak.")
+                    
+                    p_home = probs['1'] * 100
+                    p_away = probs['2'] * 100
+                    
+                    if p_home >= thr:
+                        matches.append({'Mecz': f"{h} vs {a}", 'Typ': '1 (Dom)', 'Szansa': f"{p_home:.1f}%"})
+                    elif p_away >= thr:
+                        matches.append({'Mecz': f"{h} vs {a}", 'Typ': '2 (Wyjazd)', 'Szansa': f"{p_away:.1f}%"})
+            
+            if matches:
+                st.dataframe(pd.DataFrame(matches).sort_values('Szansa', ascending=False), use_container_width=True)
+            else:
+                st.info("Brak pewniaków o takiej skuteczności.")
 
-elif selected_page == "12. Słownik":
+elif selected_page == "13. Słownik":
     q = st.text_input("Szukaj:")
     if q:
         all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
         m = [t for t in all_t if q.lower() in str(t).lower()]
         st.write(m)
-
-
-
-
-
-
-
-
