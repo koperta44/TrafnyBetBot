@@ -18,7 +18,7 @@ try:
 except:
     icon = "⚽"
 
-st.set_page_config(page_title="TrafnyBetBot ULTIMATE 100", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TrafnyBetBot 2.0", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -342,7 +342,7 @@ def find_teams(df, h, a):
 
 # --- INTERFEJS SIDEBAR ---
 with st.sidebar:
-    st.title("TrafnyBetBot ULTIMATE 100")
+    st.title("TrafnyBetBot 2.0")
     api_key = st.text_input("Klucz RapidAPI:", type="password")
     st.markdown("---")
     
@@ -628,3 +628,4 @@ elif page == "19. Słownik":
     if df is not None and q:
         ts = sorted(list(set(df['HomeTeam'])|set(df['AwayTeam'])))
         st.write([t for t in ts if q.lower() in t.lower()])
+
