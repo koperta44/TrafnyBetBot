@@ -19,45 +19,23 @@ try:
 except:
     icon = "⚽"
 
-st.set_page_config(page_title="TrafnyBetBot 2.0", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TrafnyBetBot 2.2", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
     .stApp {background-color: #1e1e1e; color: #e0e0e0;}
-    
-    /* Przyciski Główne */
     div.stButton > button {
         width: 100%; border-radius: 8px; font-weight: bold; height: 3em; transition: 0.2s;
         background: linear-gradient(135deg, #8742f5 0%, #5e17eb 100%); border: none; color: white;
-        box-shadow: 0 4px 15px rgba(135, 66, 245, 0.3);
     }
-    div.stButton > button:hover { transform: scale(1.02); }
-    
-    /* Guziki w Radarze (Gwiazdka) */
-    .radar-btn > button {
-        height: 2.5em; background: #333; border: 1px solid #555;
-    }
-
-    /* Dual Core Buttons */
-    div[data-testid="column"]:nth-of-type(1) .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    div[data-testid="column"]:nth-of-type(2) .stButton > button {
-        background: linear-gradient(135deg, #f09819 0%, #ff512f 100%);
-    }
-
-    /* Ramki */
+    .radar-btn > button { height: 2.5em; background: #333; border: 1px solid #555; }
     .watchlist-box { background-color: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #8742f5; }
     .math-box { background-color: #1b3a2b; padding: 10px; border-radius: 5px; border: 1px solid #2ecc71; margin-bottom: 5px; height: 100%; }
     .ml-box { background-color: #2c0b0e; padding: 10px; border-radius: 5px; border: 1px solid #e74c3c; margin-bottom: 5px; height: 100%; }
-    
-    /* Kolory statusów meczu */
-    .match-future { color: #2ecc71; font-weight: bold; } /* Zielony */
-    .match-live { color: #f1c40f; font-weight: bold; animation: pulse 2s infinite; } /* Żółty */
-    .match-past { color: #e74c3c; font-weight: bold; text-decoration: line-through; } /* Czerwony */
-    
+    .match-future { color: #2ecc71; font-weight: bold; }
+    .match-live { color: #f1c40f; font-weight: bold; animation: pulse 2s infinite; }
+    .match-past { color: #e74c3c; font-weight: bold; text-decoration: line-through; }
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-    
     [data-testid="stMetricValue"] {font-size: 1.0rem !important; color: #ffcc00;}
     </style>
     """, unsafe_allow_html=True)
@@ -133,36 +111,35 @@ def increment_usage(amount):
     return new_total
 
 # --- 4. CSV LOADER ---
-def clean_df(df, n, s):
-    df.columns = [c.strip() for c in df.columns]
-    df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
-    cols = ['FTHG','FTAG','HC','AC','HY','AY']
-    for c in cols:
-        if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8')
-        else: df[c] = 0
-    if 'HomeTeam' in df.columns: df['HomeTeam'] = df['HomeTeam'].astype(str)
-    if 'AwayTeam' in df.columns: df['AwayTeam'] = df['AwayTeam'].astype(str)
-    df['Liga'] = n
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
-        df['Miesiac'] = df['Date'].dt.month.fillna(0).astype('int8')
-    return df
-
 @st.cache_data(ttl=3600)
 def pobierz_baze_csv(ile_lat=5):
+    def clean_df(df, n, s):
+        df.columns = [c.strip() for c in df.columns]
+        df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
+        cols = ['FTHG','FTAG','HC','AC','HY','AY']
+        for c in cols:
+            if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8')
+            else: df[c] = 0
+        if 'HomeTeam' in df.columns: df['HomeTeam'] = df['HomeTeam'].astype(str)
+        if 'AwayTeam' in df.columns: df['AwayTeam'] = df['AwayTeam'].astype(str)
+        df['Liga'] = n
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+            df['Miesiac'] = df['Date'].dt.month.fillna(0).astype('int8')
+        return df
+
     curr_y = 25; start_y = curr_y - ile_lat
     sezony = [f"{i:02d}{i+1:02d}" for i in range(start_y, curr_y+1)]; sezony.reverse()
     wszystkie = []
     prog = st.progress(0); step=0; tot=len(LIGI_KODY)*(len(sezony)+1)
     
-    # 1. New
     for n, k in LIGI_KODY.items():
         try:
             r = requests.get(f"https://www.football-data.co.uk/new/{k}.csv", timeout=1)
             if r.status_code==200: df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,"Cur"); wszystkie.append(df)
         except: pass
         step+=1; prog.progress(min(step/tot,1.0))
-    # 2. History
+        
     for s in sezony:
         for n, k in LIGI_KODY.items():
             try:
@@ -170,35 +147,33 @@ def pobierz_baze_csv(ile_lat=5):
                 if r.status_code==200: df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,s); wszystkie.append(df)
             except: pass
         step+=1; prog.progress(min(step/tot,1.0))
-        
+    
     prog.empty()
     if wszystkie: return pd.concat(wszystkie, ignore_index=True).drop_duplicates()
     return pd.DataFrame()
 
-# --- 5. API DIRECT ---
+# --- 5. API DIRECT (SAFE MODE) ---
 API_URL = "https://v3.football.api-sports.io"
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_api_request(url, headers, params):
+    time.sleep(1.5) # BEZPIECZNE OPÓŹNIENIE
+    return requests.get(url, headers=headers, params=params, timeout=10).json()
 
 def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
     headers = {"x-apisports-key": api_key}
     wszystkie = []
     increment_usage(dni_w_przod) 
-    
-    st.info(f"📡 Pobieranie meczów...")
+    st.info(f"📡 Pobieranie... (Safe Mode)")
 
     for i in range(dni_w_przod):
         d = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
         try:
-            r = requests.get(f"{API_URL}/fixtures", headers=headers, params={"date": d}, timeout=10)
-            if r.status_code != 200:
-                st.error(f"❌ BŁĄD API: {r.status_code}")
-                return []
-            
-            data = r.json()
+            data = cached_api_request(f"{API_URL}/fixtures", headers, {"date": d})
             if 'response' in data:
                 for item in data['response']:
                     dt_str = item['fixture']['date']
                     full_dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                    
                     wszystkie.append({
                         'ID_Meczu': item['fixture']['id'], 
                         'ID_Home': item['teams']['home']['id'], 'ID_Away': item['teams']['away']['id'],
@@ -210,19 +185,17 @@ def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
                         'Label': f"{item['league']['name']} | {item['teams']['home']['name']} vs {item['teams']['away']['name']}",
                         'Miesiac': datetime.now().month
                     })
-        except Exception as e: 
-            st.error(f"Błąd: {e}"); return []
-        time.sleep(0.5)
+        except: pass
 
     wszystkie = sorted(wszystkie, key=lambda x: x['Timestamp'])
     return wszystkie
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def pobierz_sklady_api(api_key, fixture_id):
     headers = {"x-apisports-key": api_key}
     increment_usage(1)
-    time.sleep(0.3)
     try:
-        r = requests.get(f"{API_URL}/fixtures/lineups", headers=headers, params={"fixture": fixture_id}, timeout=5); d = r.json()
+        d = cached_api_request(f"{API_URL}/fixtures/lineups", headers, {"fixture": fixture_id})
         h, a = [], []
         if 'response' in d:
             for t in d['response']:
@@ -232,12 +205,12 @@ def pobierz_sklady_api(api_key, fixture_id):
         return h, a
     except: return [], []
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def analizuj_h2h_api(api_key, h_id, a_id):
     headers = {"x-apisports-key": api_key}
     increment_usage(1)
-    time.sleep(0.3)
     try:
-        r = requests.get(f"{API_URL}/fixtures/headtohead", headers=headers, params={"h2h": f"{h_id}-{a_id}"}, timeout=5); d = r.json()
+        d = cached_api_request(f"{API_URL}/fixtures/headtohead", headers, {"h2h": f"{h_id}-{a_id}"})
         hist=[]; p1=0; p2=0; tot=0
         if 'response' in d:
             for m in d['response']:
@@ -251,14 +224,14 @@ def analizuj_h2h_api(api_key, h_id, a_id):
         return hist, f"{(p1/tot)*100:.1f}%" if tot else "0%", f"{(p2/tot)*100:.1f}%" if tot else "0%"
     except: return [], "Err", "Err"
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def analizuj_forme_api(api_key, h_id, a_id):
     headers = {"x-apisports-key": api_key}
     increment_usage(2) 
     def check_team(tid):
-        time.sleep(0.3)
         p = {"team": tid, "last": "15", "status": "FT"}
         try:
-            r = requests.get(f"{API_URL}/fixtures", headers=headers, params=p, timeout=5); d = r.json()
+            d = cached_api_request(f"{API_URL}/fixtures", headers, p)
             s, c, cnt, l12, l21 = 0, 0, 0, 0, 0
             if 'response' in d:
                 for m in d['response']:
@@ -292,7 +265,46 @@ def analizuj_forme_api(api_key, h_id, a_id):
             if i+j > 2.5: probs['O25']+=p
     return {'pois': {k: v*100 for k,v in probs.items()}, 'live': {'1_2': h12+a12, '2_1': h21+a21}}
 
-# --- 6. ML (MODELE) ---
+# --- 6. ML & STATS ---
+def calc_stat_lamaki(df, h, a):
+    """Oblicza matematyczną szansę na łamaka na podstawie historii w CSV."""
+    if df is None: return {'1/2': 0, '2/1': 0}
+    
+    # 1. Znajdź drużyny
+    all_t = set(df['HomeTeam'])|set(df['AwayTeam'])
+    rh = next((t for t in all_t if h.lower() in t.lower()), None)
+    ra = next((t for t in all_t if a.lower() in t.lower()), None)
+    if not rh or not ra: return {'1/2': 0, '2/1': 0}
+    
+    # 2. Policz dla Home (jako gospodarz i gość łącznie lub tylko gospodarz - weźmiemy ogół dla większej próbki)
+    mh = df[(df['HomeTeam']==rh) | (df['AwayTeam']==rh)]
+    ma = df[(df['HomeTeam']==ra) | (df['AwayTeam']==ra)]
+    
+    def count_lamaki(d, team):
+        c12, c21 = 0, 0
+        total = len(d)
+        if total == 0: return 0, 0
+        for i, r in d.iterrows():
+            # Jeśli team gra u siebie
+            if r['HomeTeam'] == team:
+                if r['HTR'] == 'H' and r['FTR'] == 'A': c12 += 1 # Wygrywali, przegrali (1/2 z perspektywy meczu)
+                if r['HTR'] == 'A' and r['FTR'] == 'H': c21 += 1 # Przegrywali, wygrali (2/1 z perspektywy meczu)
+            # Jeśli team gra na wyjeździe
+            else:
+                if r['HTR'] == 'H' and r['FTR'] == 'A': c12 += 1 # Gospodarz prowadził, Gość (My) wygrał -> To jest 1/2 meczowe
+                if r['HTR'] == 'A' and r['FTR'] == 'H': c21 += 1
+        return (c12/total)*100, (c21/total)*100
+
+    h12, h21 = count_lamaki(mh, rh)
+    a12, a21 = count_lamaki(ma, ra)
+    
+    # Uśredniamy szansę wystąpienia w meczu tych dwóch drużyn
+    # Szansa na 1/2 w meczu = (Częstość H w 1/2 + Częstość A w 1/2) / 2
+    res_12 = (h12 + a12) / 2
+    res_21 = (h21 + a21) / 2
+    
+    return {'1/2': res_12, '2/1': res_21}
+
 def train_generic(df, target_expr, feature_col):
     if df is None or df.empty: return None, None
     d = df.copy(); d['Target'] = target_expr(d)
@@ -381,7 +393,7 @@ def find_teams(df, h, a):
 with st.sidebar:
     try: st.image("icon.png", use_column_width=True)
     except: st.header("⚽")
-    st.title("TrafnyBetBot 2.0")
+    st.title("TrafnyBetBot 2.2 SAFE")
     api_key = st.text_input("Klucz API-Sports:", type="password")
     st.markdown("---")
     
@@ -421,7 +433,7 @@ with st.sidebar:
 df = st.session_state['df']
 
 if page == "1. RADAR (Skanuj)":
-    st.header("📡 Radar Meczowy")
+    st.header("📡 Radar Meczowy (SAFE MODE)")
     if st.button("🚀 SKANUJ (3 pkt)"):
         if used>=100: st.error("Limit!"); st.stop()
         if not api_key: st.error("❌ WPISZ KLUCZ API!"); st.stop()
@@ -483,10 +495,14 @@ elif page == "⭐ KOSZYK (Dual Core)":
                 if act=="STANDARD":
                     mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam'])
                     res['mat'] = mat if mat else {'1':0,'X':0,'2':0,'O15':0,'O25':0}
+                    # DODANO STATYSTYKĘ ŁAMAKÓW
+                    res['mat']['lamaki'] = calc_stat_lamaki(df, m['HomeTeam'], m['AwayTeam'])
                     res['src']="CSV Offline"; res['live']=None
                 else:
                     live = analizuj_forme_api(api_key, m['ID_Home'], m['ID_Away'])
                     res['mat'] = live['pois']; res['src']="API Live Form"; res['live']=live['live']
+                    # DODANO STATYSTYKĘ ŁAMAKÓW (Z CSV, bo API Free nie daje historii HT/FT)
+                    res['mat']['lamaki'] = calc_stat_lamaki(df, m['HomeTeam'], m['AwayTeam'])
                 st.session_state[f"res_{m['ID_Meczu']}"] = res
         
         if f"res_{m['ID_Meczu']}" in st.session_state:
@@ -494,7 +510,8 @@ elif page == "⭐ KOSZYK (Dual Core)":
             col_left, col_right = st.columns(2)
             with col_left:
                 mat = r['mat']
-                st.markdown(f"<div class='math-box'><b>🧮 MATEMATYKA ({r['src']})</b><br><br>1: {mat.get('1',0):.0f}% | X: {mat.get('X',0):.0f}% | 2: {mat.get('2',0):.0f}%<br>BTTS: {mat.get('BTTS',0):.0f}%<br>O1.5: {mat.get('O15',0):.0f}% | O2.5: {mat.get('O25',0):.0f}%</div>", unsafe_allow_html=True)
+                lam = mat.get('lamaki', {'1/2':0, '2/1':0})
+                st.markdown(f"<div class='math-box'><b>🧮 MATEMATYKA ({r['src']})</b><br><br>1: {mat.get('1',0):.0f}% | X: {mat.get('X',0):.0f}% | 2: {mat.get('2',0):.0f}%<br>BTTS: {mat.get('BTTS',0):.0f}% | O2.5: {mat.get('O25',0):.0f}%<br><b>Łamak 1/2: {lam['1/2']:.1f}% | 2/1: {lam['2/1']:.1f}%</b></div>", unsafe_allow_html=True)
             with col_right:
                 st.markdown(f"<div class='ml-box'><b>🤖 ML (Wzorce z CSV)</b><br><br>{r['ml']}</div>", unsafe_allow_html=True)
             if r['live']:
@@ -508,7 +525,7 @@ elif page == "⭐ KOSZYK (Dual Core)":
                 else: st.write("Home:", r['sh']); st.write("Away:", r['sa'])
                 st.write(r['h'])
 
-# --- ZAKŁADKI ML ---
+# --- POZOSTAŁE ZAKŁADKI API ---
 elif page == "🧠 1X2 (AI)":
     st.header("🧠 1X2"); 
     if st.button("Analizuj 1X2"):
@@ -588,7 +605,7 @@ elif page == "🟨 KARTKI (AI)":
             res.append({"Mecz": m['Label'], "AI >3.5": f"{ai:.0f}%", "Średnia": f"{avg:.1f}", "Sygnał": sig})
         st.dataframe(pd.DataFrame(res), use_container_width=True)
 
-# --- ZAKŁADKI KLASYCZNE (HYBRYDA: CALC + ML) ---
+# --- MANUALNE ---
 elif page == "8. Schematy Ligowe":
     st.header("🛡️ Schematy Ligowe (Łamaki CSV)")
     if df is None: st.error("Pobierz bazę!"); st.stop()
@@ -617,7 +634,7 @@ elif page == "9. Przeciwnik":
             if wpadki > 0: res.append({'Rywal': opp, 'Wpadki': wpadki})
         st.dataframe(pd.DataFrame(res))
 
-elif page == "10. Łamak H2H (CSV+ML)": # <--- ZMODYFIKOWANA ZAKŁADKA
+elif page == "10. Łamak H2H (CSV+ML)":
     st.header("🔄 Sprawdź H2H i Szansę na Łamaka")
     c1, c2 = st.columns(2)
     t1 = c1.text_input("Drużyna 1:"); t2 = c2.text_input("Drużyna 2:")
@@ -625,19 +642,21 @@ elif page == "10. Łamak H2H (CSV+ML)": # <--- ZMODYFIKOWANA ZAKŁADKA
     if st.button("Sprawdź") and df is not None:
         rh, ra = find_teams(df, t1, t2)
         if rh and ra:
-            # 1. SEKCJIA ML
+            # 1. ML
             if st.session_state['ml_htft']:
                 mm = st.session_state['ml_htft']
                 pred = predict_htft(mm['m'], mm['s'], datetime.now().month, rh, ra)
-                st.warning(f"🤖 AI o Łamakach (Szansa na podstawie stylu gry):\n{pred}")
-            else:
-                st.info("AI: Model nietrenowany.")
+                st.warning(f"🤖 AI o Łamakach (Styl gry):\n{pred}")
             
-            # 2. SEKCJA HISTORII
-            st.write(f"📜 Historia spotkań {rh} vs {ra} (CSV):")
+            # 2. MATEMATYKA (DODANE)
+            stat = calc_stat_lamaki(df, rh, ra)
+            st.info(f"📊 MATEMATYKA (Częstotliwość występowania w CSV):\n1/2: {stat['1/2']:.1f}% | 2/1: {stat['2/1']:.1f}%")
+
+            # 3. HISTORIA
             m = df[((df['HomeTeam']==rh)&(df['AwayTeam']==ra)) | ((df['HomeTeam']==ra)&(df['AwayTeam']==rh))]
+            st.write("📜 Historia H2H:")
             st.dataframe(m[['Date','HomeTeam','AwayTeam','HTR','FTR']])
-        else: st.warning("Nie znaleziono drużyn w bazie CSV.")
+        else: st.warning("Nie znaleziono w CSV.")
 
 elif page == "11. H2H Kalendarz":
     st.header("📅 Kalendarz Łamaków")
@@ -649,29 +668,20 @@ elif page == "11. H2H Kalendarz":
 
 elif page == "12. Gole xG (Calc+ML)":
     st.header("⚽ Kalkulator Goli")
-    c1, c2 = st.columns(2)
-    t1 = c1.text_input("Home:"); t2 = c2.text_input("Away:")
+    c1, c2 = st.columns(2); t1 = c1.text_input("Home:"); t2 = c2.text_input("Away:")
     if st.button("Licz") and df is not None:
         rh, ra = find_teams(df, t1, t2)
-        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
-        
-        # 1. Matematyka
-        res = calc_math_csv(df, rh, ra)
-        # 2. ML
-        ai15, ai25 = 0, 0
-        if st.session_state['ml_ou15']:
-            m15 = st.session_state['ml_ou15']; m25 = st.session_state['ml_ou25']
-            curr_month = datetime.now().month
-            ai15 = predict_generic(m15['m'], m15['s'], curr_month, rh, ra)
-            ai25 = predict_generic(m25['m'], m25['s'], curr_month, rh, ra)
-        
-        if res: 
-            p = res['pois']
-            c_mat, c_ml = st.columns(2)
-            with c_mat:
-                st.info(f"📊 MATEMATYKA (Poisson)\nOver 1.5: {p['O15']:.1f}%\nOver 2.5: {p['O25']:.1f}%\nBTTS: {p['BTTS']:.1f}%")
-            with c_ml:
-                st.warning(f"🤖 AI (ML)\nOver 1.5: {ai15:.1f}%\nOver 2.5: {ai25:.1f}%")
+        if rh:
+            res = calc_math_csv(df, rh, ra)
+            ai15, ai25 = 0, 0
+            if st.session_state['ml_ou15']:
+                m15 = st.session_state['ml_ou15']; m25 = st.session_state['ml_ou25']
+                ai15 = predict_generic(m15['m'], m15['s'], datetime.now().month, rh, ra)
+                ai25 = predict_generic(m25['m'], m25['s'], datetime.now().month, rh, ra)
+            if res:
+                p=res['pois']
+                st.info(f"📊 MAT (Poisson)\nO1.5: {p['O15']:.1f}% | O2.5: {p['O25']:.1f}%")
+                st.warning(f"🤖 AI (ML)\nO1.5: {ai15:.1f}% | O2.5: {ai25:.1f}%")
 
 elif page == "13. Remisy":
     st.header("⚖️ Szukanie Remisów")
@@ -684,7 +694,7 @@ elif page == "14. Dokładny Wynik":
     c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
     if st.button("Symuluj") and df is not None:
         rh, ra = find_teams(df, t1, t2)
-        if rh and ra:
+        if rh:
             m = df[((df['HomeTeam']==rh)|(df['AwayTeam']==rh))].tail(10)
             avg_g = (m['FTHG'].sum()+m['FTAG'].sum())/len(m)
             st.info(f"Średnia goli w meczach {rh}: {avg_g:.1f}")
@@ -694,54 +704,42 @@ elif page == "15. Rożne (Calc+ML)":
     c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
     if st.button("Licz Rożne") and df is not None:
         rh, ra = find_teams(df, t1, t2)
-        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
-        
-        res = calc_math_csv(df, rh, ra)
-        ai_corn = 0
-        if st.session_state['ml_corn']:
-            mm = st.session_state['ml_corn']
-            ai_corn = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
-            
-        if res: 
-            c1, c2 = st.columns(2)
-            c1.info(f"📊 Średnia (H+A): {res['corn']:.1f}")
-            c2.warning(f"🤖 AI (Over 9.5): {ai_corn:.1f}%")
+        if rh:
+            res = calc_math_csv(df, rh, ra)
+            ai = 0
+            if st.session_state['ml_corn']:
+                mm = st.session_state['ml_corn']
+                ai = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
+            if res:
+                st.info(f"📊 Średnia: {res['corn']:.1f}"); st.warning(f"🤖 AI >9.5: {ai:.1f}%")
 
 elif page == "16. Kartki (Calc+ML)":
     st.header("🟨 Kartki Statystyki")
     c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
     if st.button("Licz Kartki") and df is not None:
         rh, ra = find_teams(df, t1, t2)
-        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
-        
-        res = calc_math_csv(df, rh, ra)
-        ai_card = 0
-        if st.session_state['ml_card']:
-            mm = st.session_state['ml_card']
-            ai_card = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
-            
-        if res: 
-            c1, c2 = st.columns(2)
-            c1.info(f"📊 Średnia (H+A): {res['card']:.1f}")
-            c2.warning(f"🤖 AI (Over 3.5): {ai_card:.1f}%")
+        if rh:
+            res = calc_math_csv(df, rh, ra)
+            ai = 0
+            if st.session_state['ml_card']:
+                mm = st.session_state['ml_card']
+                ai = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
+            if res:
+                st.info(f"📊 Średnia: {res['card']:.1f}"); st.warning(f"🤖 AI >3.5: {ai:.1f}%")
 
 elif page == "17. BTTS (Calc+ML)":
     st.header("🤝 BTTS Manual")
     c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
     if st.button("Licz BTTS") and df is not None:
         rh, ra = find_teams(df, t1, t2)
-        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
-        
-        res = calc_math_csv(df, rh, ra)
-        ai_btts = 0
-        if st.session_state['ml_btts']:
-            mm = st.session_state['ml_btts']
-            ai_btts = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
-
-        if res: 
-            c1, c2 = st.columns(2)
-            c1.info(f"📊 Matematyczna szansa BTTS: {res['pois']['BTTS']:.1f}%")
-            c2.warning(f"🤖 AI BTTS: {ai_btts:.1f}%")
+        if rh:
+            res = calc_math_csv(df, rh, ra)
+            ai = 0
+            if st.session_state['ml_btts']:
+                mm = st.session_state['ml_btts']
+                ai = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
+            if res:
+                st.info(f"📊 MAT BTTS: {res['pois']['BTTS']:.1f}%"); st.warning(f"🤖 AI BTTS: {ai:.1f}%")
 
 elif page == "18. Pewniaki 1X2":
     st.header("💎 Skaner Faworytów (CSV)")
