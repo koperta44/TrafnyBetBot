@@ -342,7 +342,12 @@ def find_teams(df, h, a):
 
 # --- INTERFEJS SIDEBAR ---
 with st.sidebar:
-    st.title("TrafnyBetBot 2.0")
+    # --- DODANY KOD DO LOGO ---
+    try:
+        st.image("icon.png", use_column_width=True) # Wyświetla duże logo
+    except:
+        st.header("⚽") # Jeśli brak pliku, pokazuje piłkę
+    # --------------------------
     api_key = st.text_input("Klucz RapidAPI:", type="password")
     st.markdown("---")
     
@@ -628,4 +633,5 @@ elif page == "19. Słownik":
     if df is not None and q:
         ts = sorted(list(set(df['HomeTeam'])|set(df['AwayTeam'])))
         st.write([t for t in ts if q.lower() in t.lower()])
+
 
