@@ -3,489 +3,628 @@ import pandas as pd
 import requests
 import io
 import math
-from datetime import datetime
+import json
+import os
+from datetime import datetime, timedelta
 from PIL import Image
 
-# --- 1. KONFIGURACJA STRONY ---
+# ML Libraries
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+
+# --- 1. KONFIGURACJA UI ---
 try:
     icon = Image.open("icon.png")
 except:
     icon = "⚽"
 
-st.set_page_config(
-    page_title="TrafnyBetBot Pro",
-    page_icon=icon,
-    layout="wide",
-    initial_sidebar_state="collapsed" 
-)
+st.set_page_config(page_title="TrafnyBetBot ULTIMATE 100", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
 
-# --- 2. CSS (BEZPIECZNY - STRZAŁKA DZIAŁA NA IPHONE) ---
 st.markdown("""
     <style>
-    /* 1. Header widoczny, ale przezroczysty - to naprawia strzałkę na iOS */
-    header {
-        visibility: visible !important;
-        background: transparent !important;
-    }
-
-    /* 2. Ukrycie stopki */
-    footer {visibility: hidden !important;}
+    .stApp {background-color: #1e1e1e; color: #e0e0e0;}
     
-    /* 3. Ciemny motyw */
-    .stApp {
-        background-color: #1e1e1e;
-        color: #e0e0e0;
-    }
-    
-    /* 4. Przyciski - FIOLET */
+    /* Przyciski Główne */
     div.stButton > button {
-        width: 100%;
-        background: linear-gradient(135deg, #8742f5 0%, #5e17eb 100%);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        height: 3.5em;
-        font-weight: 700;
+        width: 100%; border-radius: 8px; font-weight: bold; height: 3em; transition: 0.2s;
+        background: linear-gradient(135deg, #8742f5 0%, #5e17eb 100%); border: none; color: white;
         box-shadow: 0 4px 15px rgba(135, 66, 245, 0.3);
     }
+    div.stButton > button:hover { transform: scale(1.02); }
     
-    /* 5. Inputy */
-    [data-testid="stTextInput"] input, [data-testid="stSelectbox"] > div > div {
-        background-color: #2d2d2d !important; 
-        color: white !important; 
-        border: 1px solid #444;
+    /* Dual Core Buttons w Koszyku */
+    div[data-testid="column"]:nth-of-type(1) .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); /* Fiolet Standard */
     }
+    div[data-testid="column"]:nth-of-type(2) .stButton > button {
+        background: linear-gradient(135deg, #f09819 0%, #ff512f 100%); /* Ogień PRO */
+        box-shadow: 0 0 10px rgba(255, 81, 47, 0.4);
+    }
+
+    /* Statusy */
+    .status-box { padding: 10px; border-radius: 5px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+    .status-red { background-color: #4a0e0e; color: #ff9999; border: 1px solid #ff4444; }
+    .status-green { background-color: #0e4a1e; color: #99ff99; border: 1px solid #44ff44; }
     
-    /* 6. Mobile padding */
-    @media (max-width: 768px) {
-        .block-container {
-            padding-top: 4rem !important;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
-        }
-    }
+    /* Ramki */
+    .watchlist-box { background-color: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #8742f5; }
+    .top-pick-box { background-color: #1b3a2b; padding: 15px; border-radius: 10px; border: 2px solid #2ecc71; margin-bottom: 20px; }
+    .ml-box { background-color: #2c0b0e; padding: 10px; border-radius: 5px; border: 1px solid #e74c3c; margin-top: 5px; font-size: 0.9em; }
+    
+    [data-testid="stMetricValue"] {font-size: 1.0rem !important; color: #ffcc00;}
     </style>
     """, unsafe_allow_html=True)
-# --- 3. PEŁNA LISTA LIG ---
+
+# --- 2. ZMIENNE I BAZA LIG (MAXIMUM) ---
+# To jest pełna lista obsługiwana przez darmowe CSV
 LIGI_KODY = {
-    # ANGLIA
-    "Anglia - Premier League": "E0", "Anglia - Championship": "E1",
-    "Anglia - League 1": "E2", "Anglia - League 2": "E3", "Anglia - Conference": "EC",
-    # SZKOCJA
-    "Szkocja - Premiership": "SC0", "Szkocja - Div 1": "SC1", "Szkocja - Div 2": "SC2", "Szkocja - Div 3": "SC3",
-    # NIEMCY
-    "Niemcy - Bundesliga 1": "D1", "Niemcy - Bundesliga 2": "D2", "Niemcy - 3. Liga": "D3",
-    # WŁOCHY
+    # EUROPA GŁÓWNE
+    "Anglia - Premier League": "E0", "Anglia - Championship": "E1", "Anglia - L1": "E2", "Anglia - L2": "E3", "Anglia - Conference": "EC",
+    "Niemcy - Bundesliga": "D1", "Niemcy - 2. Bundesliga": "D2", "Niemcy - 3. Liga": "D3",
     "Włochy - Serie A": "I1", "Włochy - Serie B": "I2",
-    # HISZPANIA
     "Hiszpania - La Liga": "SP1", "Hiszpania - Segunda": "SP2",
-    # FRANCJA
     "Francja - Ligue 1": "F1", "Francja - Ligue 2": "F2",
-    # EUROPA
     "Holandia": "N1", "Belgia": "B1", "Portugalia": "P1", "Turcja": "T1", "Grecja": "G1",
-    # ŚWIAT
-    "Polska - Ekstraklasa": "POL", "Austria - Bundesliga": "AUT", "Szwajcaria - Super League": "SWZ",
-    "Szwecja - Allsvenskan": "SWE", "Norwegia - Eliteserien": "NOR", "Dania - Superliga": "DNK",
-    "Finlandia - Veikkausliiga": "FIN", "Irlandia - Premier": "IRL", "Rumunia - Liga 1": "ROU",
-    "Rosja - Premier League": "RUS", "USA - MLS": "USA", "Meksyk - Liga MX": "MEX",
-    "Brazylia - Serie A": "BRA", "Argentyna - Liga Pro": "ARG", "Chiny - Super League": "CHN", "Japonia - J-League": "JPN"
+    "Szkocja - Prem": "SC0", "Szkocja - D1": "SC1", "Szkocja - D2": "SC2", "Szkocja - D3": "SC3",
+    
+    # RESZTA ŚWIATA (Extra Leagues)
+    "Argentyna": "ARG", "Austria": "AUT", "Brazylia": "BRA", "Chiny": "CHN",
+    "Dania": "DNK", "Finlandia": "FIN", "Irlandia": "IRL", "Japonia": "JPN",
+    "Meksyk": "MEX", "Norwegia": "NOR", "Polska": "POL", "Rumunia": "ROU",
+    "Rosja": "RUS", "Szwecja": "SWE", "Szwajcaria": "SWZ", "USA - MLS": "USA"
 }
-# --- FUNKCJE ---
+
+USAGE_FILE = "api_usage.json"
+# Inicjalizacja stanów
+if 'watchlist' not in st.session_state: st.session_state['watchlist'] = []
+if 'df' not in st.session_state: st.session_state['df'] = None
+if 'pobrane_mecze' not in st.session_state: st.session_state['pobrane_mecze'] = pd.DataFrame()
+
+# Modele ML
+models = ['ml_htft', 'ml_1x2', 'ml_btts', 'ml_ou15', 'ml_ou25', 'ml_corn', 'ml_card']
+for k in models:
+    if k not in st.session_state: st.session_state[k] = None
+
+# --- 3. LIMIT I API ---
+def get_usage():
+    today = datetime.now().strftime("%Y-%m-%d")
+    if not os.path.exists(USAGE_FILE): return 0, today
+    try:
+        with open(USAGE_FILE, 'r') as f:
+            data = json.load(f)
+            return (data.get('count', 0), today) if data.get('date') == today else (0, today)
+    except: return 0, today
+
+def increment_usage(amount):
+    current, today = get_usage()
+    new_total = current + amount
+    with open(USAGE_FILE, 'w') as f: json.dump({"date": today, "count": new_total}, f)
+    return new_total
+
+# --- 4. CSV LOADER (OFFLINE) ---
 def clean_df(df, n, s):
     df.columns = [c.strip() for c in df.columns]
     df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
-    req=['Date','HomeTeam','AwayTeam','HTR','FTR','FTHG','FTAG']
-    opt=['HC','AC','HY','AY','HR','AR']
-    
-    for c in opt: 
-        if c not in df.columns: df[c] = 0
-        else: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8')
-    if 'FTHG' in df.columns: df['FTHG'] = pd.to_numeric(df['FTHG'], errors='coerce').fillna(0).astype('int8')
-    if 'FTAG' in df.columns: df['FTAG'] = pd.to_numeric(df['FTAG'], errors='coerce').fillna(0).astype('int8')
-    if 'FTR' not in df.columns: df['FTR']='D'
-    
+    # Konwersja kolumn statystycznych
+    cols = ['FTHG','FTAG','HC','AC','HY','AY']
+    for c in cols:
+        if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8')
+        else: df[c] = 0
     if 'HomeTeam' in df.columns: df['HomeTeam'] = df['HomeTeam'].astype(str)
     if 'AwayTeam' in df.columns: df['AwayTeam'] = df['AwayTeam'].astype(str)
-
-    if set(['HomeTeam','AwayTeam']).issubset(df.columns):
-        df['Liga'] = n
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
-            df['Rok'] = df['Date'].dt.year.fillna(0).astype('int16')
-            df['Miesiac'] = df['Date'].dt.month.fillna(0).astype('int8')
-        cols = list(set(req+opt+['Liga','Rok','Miesiac']) & set(df.columns))
-        return df[cols]
-    return pd.DataFrame()
+    df['Liga'] = n
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+        df['Rok'] = df['Date'].dt.year.fillna(0).astype('int16')
+        df['Miesiac'] = df['Date'].dt.month.fillna(0).astype('int8')
+        df['Dzien'] = df['Date'].dt.day.fillna(0).astype('int8')
+    return df
 
 @st.cache_data(ttl=3600)
-def pobierz_dane(ile_lat):
+def pobierz_baze_csv(ile_lat=5):
     curr_y = 25; start_y = curr_y - ile_lat
     sezony = [f"{i:02d}{i+1:02d}" for i in range(start_y, curr_y+1)]; sezony.reverse()
     wszystkie = []
     
+    prog = st.progress(0); step=0; tot=len(LIGI_KODY)*(len(sezony)+1)
+    
+    # 1. Główne ligi (folder /new/)
     for n, k in LIGI_KODY.items():
         try:
             r = requests.get(f"https://www.football-data.co.uk/new/{k}.csv", timeout=1)
-            if r.status_code==200:
-                df = pd.read_csv(io.StringIO(r.text)); df = clean_df(df, n, "Current")
-                wszystkie.append(df)
+            if r.status_code==200: 
+                df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,"Cur"); wszystkie.append(df)
         except: pass
-    
-    if ile_lat > 0:
-        for s in sezony:
-            for n, k in LIGI_KODY.items():
-                try:
-                    r = requests.get(f"https://www.football-data.co.uk/mmz4281/{s}/{k}.csv", timeout=1)
-                    if r.status_code==200:
-                        df = pd.read_csv(io.StringIO(r.text)); df = clean_df(df, n, s)
-                        wszystkie.append(df)
-                except: pass
-    
-    if wszystkie:
-        final = pd.concat(wszystkie, ignore_index=True).drop_duplicates()
-        if 'Date' in final.columns:
-            final['Date'] = pd.to_datetime(final['Date'], dayfirst=True, errors='coerce')
-            final = final.sort_values('Date')
-        return final
+        step+=1; prog.progress(min(step/tot,1.0))
+        
+    # 2. Archiwum (folder /mmz4281/)
+    for s in sezony:
+        for n, k in LIGI_KODY.items():
+            try:
+                r = requests.get(f"https://www.football-data.co.uk/mmz4281/{s}/{k}.csv", timeout=1)
+                if r.status_code==200: 
+                    df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,s); wszystkie.append(df)
+            except: pass
+        step+=1; prog.progress(min(step/tot,1.0))
+        
+    prog.empty()
+    if wszystkie: return pd.concat(wszystkie, ignore_index=True).drop_duplicates()
     return pd.DataFrame()
 
+# --- 5. API FUNKCJE ---
+def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
+    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
+    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    wszystkie = []
+    increment_usage(dni_w_przod) 
+    for i in range(dni_w_przod):
+        d = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
+        try:
+            r = requests.get(url, headers=headers, params={"date": d}); data = r.json()
+            if 'response' in data:
+                for item in data['response']:
+                    wszystkie.append({
+                        'ID_Meczu': item['fixture']['id'], 'ID_Home': item['teams']['home']['id'], 'ID_Away': item['teams']['away']['id'],
+                        'Data': d, 'Godzina': item['fixture']['date'][11:16],
+                        'Liga': item['league']['name'], 'HomeTeam': item['teams']['home']['name'], 'AwayTeam': item['teams']['away']['name'],
+                        'Label': f"{item['league']['name']} | {item['teams']['home']['name']} vs {item['teams']['away']['name']}",
+                        'Miesiac': datetime.now().month
+                    })
+        except: pass
+    return pd.DataFrame(wszystkie)
+
+def pobierz_sklady_api(api_key, fixture_id):
+    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures/lineups"
+    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    increment_usage(1)
+    try:
+        r = requests.get(url, headers=headers, params={"fixture": fixture_id}); d = r.json()
+        h, a = [], []
+        if 'response' in d:
+            for t in d['response']:
+                xi = [p['player']['name'] for p in t['startXI']]
+                if not h: h=xi
+                else: a=xi
+        return h, a
+    except: return [], []
+
+def analizuj_h2h_api(api_key, h_id, a_id):
+    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures/headtohead"
+    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    increment_usage(1)
+    try:
+        r = requests.get(url, headers=headers, params={"h2h": f"{h_id}-{a_id}"}); d = r.json()
+        hist=[]; p1=0; p2=0; tot=0
+        if 'response' in d:
+            for m in d['response']:
+                try:
+                    s = m['score']; dt = m['fixture']['date'][:10]
+                    hist.append(f"{dt}: HT {s['halftime']['home']}-{s['halftime']['away']} / FT {s['fulltime']['home']}-{s['fulltime']['away']}")
+                    tot+=1
+                    if s['halftime']['home']>s['halftime']['away'] and s['fulltime']['home']<s['fulltime']['away']: p1+=1
+                    if s['halftime']['away']>s['halftime']['home'] and s['fulltime']['home']>s['fulltime']['away']: p2+=1
+                except: pass
+        return hist, f"{(p1/tot)*100:.1f}%" if tot else "0%", f"{(p2/tot)*100:.1f}%" if tot else "0%"
+    except: return [], "Err", "Err"
+
+def analizuj_forme_api(api_key, h_id, a_id):
+    """LIVE PRO: Forma LIVE z ostatnich 15 meczów."""
+    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
+    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    increment_usage(2) 
+    
+    def check_team(tid):
+        p = {"team": tid, "last": "15", "status": "FT"}
+        try:
+            r = requests.get(url, headers=headers, params=p); d = r.json()
+            s, c, cnt, l12, l21 = 0, 0, 0, 0, 0
+            if 'response' in d:
+                for m in d['response']:
+                    sc = m['score']; g = m['goals']
+                    is_home = (m['teams']['home']['id'] == tid)
+                    gh = g['home'] if is_home else g['away']; ga = g['away'] if is_home else g['home']
+                    if gh is not None: s+=gh; c+=ga; cnt+=1
+                    
+                    if sc['halftime']['home'] is None: continue
+                    hh, ha = sc['halftime']['home'], sc['halftime']['away']
+                    fh, fa = sc['fulltime']['home'], sc['fulltime']['away']
+                    
+                    if is_home:
+                        if hh>ha and fh<fa: l12+=1
+                        if hh<ha and fh>fa: l21+=1
+                    else:
+                        if ha>hh and fa<fh: l12+=1
+                        if ha<hh and fa>fh: l21+=1
+            return (s/cnt if cnt else 1.0), (c/cnt if cnt else 1.0), l12, l21
+        except: return 1.0, 1.0, 0, 0
+
+    ha, hd, h12, h21 = check_team(h_id); aa, ad, a12, a21 = check_team(a_id)
+    xg_h = ha * ad * 1.1; xg_a = aa * hd
+    
+    def pois(k, l): return (math.exp(-l)*(l**k))/math.factorial(k)
+    probs = {'1':0,'X':0,'2':0,'BTTS':0,'O15':0,'O25':0}
+    for i in range(6):
+        for j in range(6):
+            p = pois(i, xg_h) * pois(j, xg_a)
+            if i>j: probs['1']+=p
+            elif i==j: probs['X']+=p
+            else: probs['2']+=p
+            if i>0 and j>0: probs['BTTS']+=p
+            if i+j > 1.5: probs['O15']+=p
+            if i+j > 2.5: probs['O25']+=p
+            
+    return {'pois': {k: v*100 for k,v in probs.items()}, 'live': {'1_2': h12+a12, '2_1': h21+a21}}
+
+# --- 6. ML (MODELE) ---
+def train_generic(df, target_expr, feature_col):
+    if df is None or df.empty: return None, None
+    d = df.copy(); d['Target'] = target_expr(d)
+    stats = {}
+    for t in pd.concat([d['HomeTeam'], d['AwayTeam']]).unique():
+        m = d[(d['HomeTeam']==t)|(d['AwayTeam']==t)]
+        stats[t] = m[feature_col].mean() if not m.empty else 0.5
+    d['H_S'] = d['HomeTeam'].map(stats).fillna(0); d['A_S'] = d['AwayTeam'].map(stats).fillna(0)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(d[['Miesiac','H_S','A_S']], d['Target'])
+    return model, stats
+
+def predict_generic(model, stats, m, h, a):
+    if not model: return 0
+    probs = model.predict_proba([[m, stats.get(h,0), stats.get(a,0)]])[0]
+    return probs[1]*100 if 1 in model.classes_ else 0
+
+def trenuj_htft(df):
+    if df is None: return None, None
+    d = df.copy()
+    d['Target'] = d.apply(lambda r: 1 if r['HTR']=='H' and r['FTR']=='A' else (2 if r['HTR']=='A' and r['FTR']=='H' else 0), axis=1)
+    ts = {}
+    for t in pd.concat([d['HomeTeam'], d['AwayTeam']]).unique():
+        m = d[(d['HomeTeam']==t)|(d['AwayTeam']==t)]
+        ts[t] = (m['FTHG'].sum()+m['FTAG'].sum())/(len(m)+1)
+    d['H'] = d['HomeTeam'].map(ts).fillna(1); d['A'] = d['AwayTeam'].map(ts).fillna(1)
+    model = RandomForestClassifier(n_estimators=100, class_weight='balanced', max_depth=10, random_state=42)
+    model.fit(d[['Miesiac','H','A']], d['Target'])
+    return model, ts
+
+def predict_htft(model, stats, m, h, a):
+    if not model: return "Brak modelu"
+    probs = model.predict_proba([[m, stats.get(h,1), stats.get(a,1)]])[0]
+    p1 = probs[list(model.classes_).index(1)]*100 if 1 in model.classes_ else 0
+    p2 = probs[list(model.classes_).index(2)]*100 if 2 in model.classes_ else 0
+    return f"1/2: {p1:.1f}% | 2/1: {p2:.1f}%"
+
+def trenuj_1x2(df):
+    if df is None: return None, None, None
+    d = df.copy(); le = LabelEncoder(); d['Target'] = le.fit_transform(d['FTR'])
+    ts = {}
+    for t in pd.concat([d['HomeTeam'], d['AwayTeam']]).unique():
+        mh=d[d['HomeTeam']==t]; ma=d[d['AwayTeam']==t]
+        ts[t] = ((mh['FTHG']-mh['FTAG']).mean() + (ma['FTAG']-ma['FTHG']).mean())/2
+    d['H'] = d['HomeTeam'].map(ts).fillna(0); d['A'] = d['AwayTeam'].map(ts).fillna(0)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(d[['Miesiac','H','A']], d['Target'])
+    return model, ts, le
+
+def predict_1x2(model, stats, le, m, h, a):
+    if not model: return {}
+    probs = model.predict_proba([[m, stats.get(h,0), stats.get(a,0)]])[0]
+    return {c: probs[i]*100 for i,c in enumerate(le.classes_)}
+
+def calc_math_csv(df, h, a):
+    if df is None: return None
+    all_t = set(df['HomeTeam'])|set(df['AwayTeam'])
+    rh = next((t for t in all_t if h.lower() in t.lower()), None)
+    ra = next((t for t in all_t if a.lower() in t.lower()), None)
+    if not rh or not ra: return None
+    try:
+        mh=df[df['HomeTeam']==rh].tail(20); ma=df[df['AwayTeam']==ra].tail(20)
+        avg_h = mh['FTHG'].mean() if not mh.empty else 1.2; avg_a = ma['FTAG'].mean() if not ma.empty else 1.0
+        xg_h = avg_h * 1.1; xg_a = avg_a * 1.1
+        def p(k, l): return (math.exp(-l)*(l**k))/math.factorial(k)
+        probs = {'1':0,'X':0,'2':0,'BTTS':0,'O15':0,'O25':0}
+        for i in range(6):
+            for j in range(6):
+                prob = p(i, xg_h)*p(j, xg_a)
+                if i>j: probs['1']+=prob
+                elif i==j: probs['X']+=prob
+                else: probs['2']+=prob
+                if i>0 and j>0: probs['BTTS']+=p
+                if i+j > 1.5: probs['O15']+=p
+                if i+j > 2.5: probs['O25']+=p
+        return {'pois': probs, 'corn': (mh['HC'].mean()+ma['AC'].mean()), 'card': (mh['HY'].mean()+ma['AY'].mean())}
+    except: return None
+
 def find_teams(df, h, a):
-    if df.empty: return None, None
     all_t = set(df['HomeTeam'])|set(df['AwayTeam'])
     rh = next((t for t in all_t if h.lower() in t.lower()), None)
     ra = next((t for t in all_t if a.lower() in t.lower()), None)
     return rh, ra
 
-# --- SILNIK ANALITYCZNY ---
-def calculate_metrics(df, rh, ra):
-    try:
-        match_row = df[df['HomeTeam'] == rh].iloc[-1] if not df[df['HomeTeam'] == rh].empty else None
-        if match_row is None: return None
-        liga = match_row['Liga']
-        df_league = df[df['Liga'] == liga].tail(500)
-        avg_hg = df_league['FTHG'].mean() if not df_league.empty else 1.35
-        avg_ag = df_league['FTAG'].mean() if not df_league.empty else 1.15
-        mh = df[df['HomeTeam'] == rh].tail(20)
-        ma = df[df['AwayTeam'] == ra].tail(20)
-        if mh.empty or ma.empty: return None
-        h_att = (mh['FTHG'].mean() / avg_hg)
-        h_def = (mh['FTAG'].mean() / avg_ag)
-        a_att = (ma['FTAG'].mean() / avg_ag)
-        a_def = (ma['FTHG'].mean() / avg_hg)
-        xg_h = avg_hg * h_att * a_def
-        xg_a = avg_ag * a_att * h_def
-        return {'xg_h': xg_h, 'xg_a': xg_a}
-    except: return None
-
-def poisson_probability(xg_h, xg_a):
-    def poisson(k, lam): return (math.exp(-lam) * (lam**k)) / math.factorial(k)
-    probs = {'1': 0, 'X': 0, '2': 0, 'O1.5': 0, 'O2.5': 0, 'BTTS': 0}
-    prob_matrix = []
-    for i in range(6):
-        for j in range(6):
-            p = poisson(i, xg_h) * poisson(j, xg_a)
-            if i > j: probs['1'] += p
-            elif i == j: probs['X'] += p
-            else: probs['2'] += p
-            if i + j > 1.5: probs['O1.5'] += p
-            if i + j > 2.5: probs['O2.5'] += p
-            if i > 0 and j > 0: probs['BTTS'] += p
-            if p * 100 > 3.0: prob_matrix.append((f"{i}:{j}", p*100))
-    prob_matrix.sort(key=lambda x:x[1], reverse=True)
-    return probs, prob_matrix
-
-# --- SIDEBAR ---
+# --- INTERFEJS SIDEBAR ---
 with st.sidebar:
-    try: st.image("icon.png", width=120)
-    except: st.title("TrafnyBetBot")
+    st.title("TrafnyBetBot ULTIMATE 100")
+    api_key = st.text_input("Klucz RapidAPI:", type="password")
     st.markdown("---")
-    st.header("MENU GŁÓWNE")
-    menu_options = [
-        "1. Schematy", "2. Przeciwnik", "3. Łamak 1/2", "4. H2H Kalendarz", 
-        "5. Gole (xG)", "6. Remisy", "7. Dokładny Wynik", "8. Rożne", "9. Kartki", 
-        "10. BTTS", "11. Perełki (Łamaki)", "12. Pewniaki (1X2)", "13. Słownik"
-    ]
-    selected_page = st.selectbox("Wybierz narzędzie:", menu_options, label_visibility="collapsed")
+    
+    if st.session_state['df'] is None:
+        if st.button("📥 POBIERZ BAZĘ (Wszystkie Ligi)"):
+            with st.spinner("Pobieranie dziesiątek lig..."): st.session_state['df'] = pobierz_baze_csv(5); st.rerun()
+    else:
+        st.success(f"Baza CSV: {len(st.session_state['df'])} meczów")
+        if st.button("🧠 TRENUJ WSZYSTKIE MODELE"):
+            with st.spinner("Bot się uczy..."):
+                df = st.session_state['df']
+                m, s = trenuj_htft(df); st.session_state['ml_htft'] = {'m':m, 's':s}
+                m, s, l = trenuj_1x2(df); st.session_state['ml_1x2'] = {'m':m, 's':s, 'l':l}
+                m, s = train_generic(df, lambda d: ((d['FTHG']>0)&(d['FTAG']>0)).astype(int), 'FTHG'); st.session_state['ml_btts'] = {'m':m, 's':s}
+                m, s = train_generic(df, lambda d: ((d['FTHG']+d['FTAG'])>1.5).astype(int), 'FTHG'); st.session_state['ml_ou15'] = {'m':m, 's':s}
+                m, s = train_generic(df, lambda d: ((d['FTHG']+d['FTAG'])>2.5).astype(int), 'FTHG'); st.session_state['ml_ou25'] = {'m':m, 's':s}
+                if 'HC' in df.columns: 
+                    m, s = train_generic(df, lambda d: ((d['HC']+d['AC'])>9.5).astype(int), 'HC'); st.session_state['ml_corn'] = {'m':m, 's':s}
+                if 'HY' in df.columns:
+                    m, s = train_generic(df, lambda d: ((d['HY']+d['AY'])>3.5).astype(int), 'HY'); st.session_state['ml_card'] = {'m':m, 's':s}
+                st.success("Modele Gotowe!")
+
+    used, _ = get_usage()
+    st.write(f"API: **{used}/100** pkt")
+    
     st.markdown("---")
-    st.markdown("### Baza Danych")
-    opcje = {"1 rok (Szybko)":1, "5 lat":5, "10 lat":10, "15 lat":15}
-    wybor = st.selectbox("Zakres historii:", list(opcje.keys()), index=0)
-    if st.button("POBIERZ / ODŚWIEŻ"):
-        with st.spinner("Aktualizacja..."):
-            st.session_state['df'] = pobierz_dane(opcje[wybor])
-        st.success(f"Gotowe! Mecze: {len(st.session_state['df'])}")
+    st.caption("🚀 NOWOCZESNE (API+ML)")
+    menu_api = ["1. RADAR (Skanuj)", "⭐ KOSZYK (Dual Core)", "🧠 1X2 (AI)", "🤝 BTTS (AI)", "⚽ GOLE (AI Over/Under)", "⛳ ROŻNE (AI)", "🟨 KARTKI (AI)"]
+    st.caption("📚 KLASYCZNE (CSV Offline)")
+    menu_csv = ["8. Schematy Ligowe", "9. Przeciwnik", "10. Łamak 1/2", "11. H2H Kalendarz", "12. Gole xG (Calc)", 
+                "13. Remisy", "14. Dokładny Wynik", "15. Rożne (Calc)", "16. Kartki (Calc)", "17. BTTS (Calc)", 
+                "18. Pewniaki 1X2", "19. Słownik"]
+    
+    page = st.selectbox("Wybierz moduł:", menu_api + menu_csv)
 
-# --- MAIN ---
-col_logo, col_title = st.columns([1, 5])
-with col_logo:
-    try: st.image("icon.png", width=50)
-    except: st.write("⚽")
-with col_title:
-    st.title(selected_page)
-
-if 'df' not in st.session_state or st.session_state['df'].empty:
-    st.info("👈 Kliknij strzałkę '>' w lewym górnym rogu i pobierz bazę danych.")
-    st.stop()
-
+# --- GŁÓWNA LOGIKA ---
 df = st.session_state['df']
 
-# --- ZAKŁADKI ---
+# 1. RADAR (API)
+if page == "1. RADAR (Skanuj)":
+    st.header("📡 Radar Meczowy")
+    if st.button("🚀 SKANUJ (3 pkt)"):
+        if used>=100: st.error("Limit!"); st.stop()
+        with st.spinner("Pobieranie..."):
+            st.session_state['pobrane_mecze'] = pobierz_mecze_zakres_api(api_key, 3); st.rerun()
+    if not st.session_state['pobrane_mecze'].empty:
+        m = st.session_state['pobrane_mecze']
+        st.dataframe(m[['Data','Liga','HomeTeam','AwayTeam']], use_container_width=True)
+        sel = st.selectbox("Wybierz:", m['Label'])
+        if st.button("Dodaj do Koszyka"):
+            row = m[m['Label']==sel].iloc[0].to_dict()
+            if not any(x['Label']==sel for x in st.session_state['watchlist']):
+                st.session_state['watchlist'].append(row); st.success("Dodano!")
 
-if selected_page == "1. Schematy":
-    if st.button("Skanuj Trendy"):
-        teams = set(df['HomeTeam'])|set(df['AwayTeam']); res=[]
-        for t in teams:
-            d = df[(df['HomeTeam']==t)|(df['AwayTeam']==t)]
-            if len(d)<5: continue
-            hard = len(d[((d['HTR']=='H')&(d['FTR']=='A'))|((d['HTR']=='A')&(d['FTR']=='H'))])
-            if hard>0: res.append({'Drużyna':t, 'Mecze':len(d), 'Łamaki':hard})
-        
+# 2. KOSZYK (API + LIVE)
+elif page == "⭐ KOSZYK (Dual Core)":
+    st.header("⭐ Centrum Decyzyjne")
+    if not st.session_state['watchlist']: st.info("Koszyk pusty.")
+    for m in st.session_state['watchlist']:
+        st.markdown(f"<div class='watchlist-box'><b>{m['Label']}</b></div>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("👑 Królowie Łamaków")
-            if res: st.dataframe(pd.DataFrame(res).sort_values('Łamaki', ascending=False).head(15), use_container_width=True)
+        k_s=f"s_{m['ID_Meczu']}"; k_p=f"p_{m['ID_Meczu']}"; act=None
+        with c1: 
+            if st.button("🔎 STANDARD (2 pkt)", key=k_s): act="STANDARD"
         with c2:
-            st.subheader("🔥 Serie H2H")
-            p = df[((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))]
-            if not p.empty:
-                cnt = p.groupby(['HomeTeam','AwayTeam']).size().reset_index(name='Ilość')
-                st.dataframe(cnt[cnt['Ilość']>=2].sort_values('Ilość', ascending=False), use_container_width=True)
+            if st.button("🧪 LIVE PRO (4 pkt)", key=k_p): act="PRO"
+        
+        if act:
+            if act=="STANDARD" and used>=98: st.error("Limit!"); st.stop()
+            if act=="PRO" and used>=96: st.error("Limit!"); st.stop()
+            with st.spinner("Analiza..."):
+                h, p1, p2 = analizuj_h2h_api(api_key, m['ID_Home'], m['ID_Away'])
+                sh, sa = pobierz_sklady_api(api_key, m['ID_Meczu'])
+                ml_txt = "Brak modelu"
+                if st.session_state['ml_htft']:
+                    mod = st.session_state['ml_htft']
+                    ml_txt = predict_htft(mod['m'], mod['s'], m['Miesiac'], m['HomeTeam'], m['AwayTeam'])
+                res = {'h':h, 'p1':p1, 'p2':p2, 'sh':sh, 'sa':sa, 'ml':ml_txt, 'type':act}
+                if act=="STANDARD":
+                    mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam'])
+                    res['mat'] = mat if mat else {'1':0,'X':0,'2':0,'O15':0,'O25':0}
+                    res['src']="CSV Offline"; res['live']=None
+                else:
+                    live = analizuj_forme_api(api_key, m['ID_Home'], m['ID_Away'])
+                    res['mat'] = live['pois']; res['src']="API Live Form"; res['live']=live['live']
+                st.session_state[f"res_{m['ID_Meczu']}"] = res
+        
+        if f"res_{m['ID_Meczu']}" in st.session_state:
+            r = st.session_state[f"res_{m['ID_Meczu']}"]
+            clr = "#2ecc71" if r['type']=="PRO" else "#667eea"
+            st.markdown(f"<div style='border: 2px solid {clr}; padding: 10px; border-radius: 5px; margin-bottom: 5px;'>", unsafe_allow_html=True)
+            st.write(f"📊 Tryb: **{r['type']}** (Źródło: {r['src']})")
+            st.markdown(f"🤖 **ML:** {r['ml']}")
+            mat = r['mat']
+            st.write(f"🧮 **Poisson:** 1: {mat.get('1',0):.0f}% | X: {mat.get('X',0):.0f}% | 2: {mat.get('2',0):.0f}%")
+            if r['live']:
+                f = r['live']
+                if f['1_2']>0 or f['2_1']>0: st.error(f"🔥 ALARM LIVE: Łamaki w ost. 15 meczach: {f['1_2']+f['2_1']}")
+            st.info(f"H2H 1/2: {r['p1']} | 2/1: {r['p2']}")
+            with st.expander("Składy i H2H"): st.write("H:", r['sh']); st.write("A:", r['sa']); st.write(r['h'])
+            st.markdown("</div>", unsafe_allow_html=True)
 
-elif selected_page == "2. Przeciwnik":
-    mt = st.text_input("Gospodarz (Ty):")
-    if st.button("Szukaj Ofiary") and mt:
-        rh, _ = find_teams(df, mt, "x")
-        if rh:
-            cand=[]
-            for op in (set(df['HomeTeam'])|set(df['AwayTeam'])):
-                if op==rh: continue
-                ma=df[df['AwayTeam']==op]
-                choke=len(ma[(ma['HTR']=='A')&(ma['FTR']=='H')])
-                if choke>0: cand.append({'Rywal':op, 'Wpadki (Łamak)':choke})
-            if cand: st.dataframe(pd.DataFrame(cand).sort_values('Wpadki (Łamak)',ascending=False).head(20), use_container_width=True)
-            else: st.info("Brak kandydatów.")
+# 3. 1X2
+elif page == "🧠 1X2 (AI)":
+    st.header("🧠 1X2"); 
+    if st.button("Analizuj 1X2"):
+        if not st.session_state['ml_1x2']: st.error("Trenuj!"); st.stop()
+        res=[]; mm=st.session_state['ml_1x2']
+        for i, r in st.session_state['pobrane_mecze'].iterrows():
+            p = predict_1x2(mm['m'], mm['s'], mm['l'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
+            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); mp = mat['pois'] if mat else {}
+            sig=""
+            if p.get('H',0)>60 and mp.get('1',0)>55: sig="🔥 1"
+            if p.get('A',0)>60 and mp.get('2',0)>55: sig="🔥 2"
+            res.append({"Mecz": r['Label'], "AI 1": f"{p.get('H',0):.0f}%", "Mat 1": f"{mp.get('1',0):.0f}%", "Sygnał": sig})
+        st.dataframe(pd.DataFrame(res), use_container_width=True)
 
-elif selected_page == "3. Łamak 1/2":
+# 4. BTTS
+elif page == "🤝 BTTS (AI)":
+    st.header("🤝 BTTS")
+    if st.button("Analizuj BTTS"):
+        if not st.session_state['ml_btts']: st.error("Trenuj!"); st.stop()
+        res=[]; mm=st.session_state['ml_btts']
+        for i, r in st.session_state['pobrane_mecze'].iterrows():
+            ai = predict_generic(mm['m'], mm['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
+            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); mp = mat['pois'].get('BTTS',0)*100 if mat else 0
+            sig=""
+            if ai>60 and mp>60: sig="🔥 TAK"
+            if ai<40 and mp<40: sig="🧊 NIE"
+            res.append({"Mecz": r['Label'], "AI Tak": f"{ai:.0f}%", "Mat Tak": f"{mp:.0f}%", "Sygnał": sig})
+        st.dataframe(pd.DataFrame(res), use_container_width=True)
+
+# 5. GOLE
+elif page == "⚽ GOLE (AI Over/Under)":
+    st.header("⚽ Linie Bramkowe (1.5 i 2.5)")
+    if st.button("Analizuj Gole"):
+        if not st.session_state['ml_ou25']: st.error("Trenuj!"); st.stop()
+        res=[]
+        m15 = st.session_state['ml_ou15']; m25 = st.session_state['ml_ou25']
+        for i, r in st.session_state['pobrane_mecze'].iterrows():
+            ai15 = predict_generic(m15['m'], m15['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
+            ai25 = predict_generic(m25['m'], m25['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
+            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam'])
+            mp15 = mat['pois'].get('O15',0)*100 if mat else 0
+            mp25 = mat['pois'].get('O25',0)*100 if mat else 0
+            sig15 = "🔥 O1.5" if (ai15>70 and mp15>70) else ("🧊 U1.5" if (ai15<30 and mp15<30) else "-")
+            sig25 = "🔥 O2.5" if (ai25>60 and mp25>60) else ("🧊 U2.5" if (ai25<35 and mp25<35) else "-")
+            res.append({"Mecz": r['Label'], "AI O1.5": f"{ai15:.0f}%", "Mat O1.5": f"{mp15:.0f}%", "Sig 1.5": sig15,
+                        "AI O2.5": f"{ai25:.0f}%", "Mat O2.5": f"{mp25:.0f}%", "Sig 2.5": sig25})
+        st.dataframe(pd.DataFrame(res), use_container_width=True)
+
+# 6. ROŻNE
+elif page == "⛳ ROŻNE (AI)":
+    st.header("⛳ Rożne > 9.5")
+    if st.button("Analizuj Rożne"):
+        if not st.session_state['ml_corn']: st.error("Trenuj!"); st.stop()
+        res=[]; mm=st.session_state['ml_corn']
+        for i, r in st.session_state['pobrane_mecze'].iterrows():
+            ai = predict_generic(mm['m'], mm['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
+            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); avg = mat['corn'] if mat else 0
+            sig = "🔥 OVER" if (ai>65 and avg>10) else ""
+            res.append({"Mecz": r['Label'], "AI >9.5": f"{ai:.0f}%", "Średnia": f"{avg:.1f}", "Sygnał": sig})
+        st.dataframe(pd.DataFrame(res), use_container_width=True)
+
+# 7. KARTKI
+elif page == "🟨 KARTKI (AI)":
+    st.header("🟨 Kartki > 3.5")
+    if st.button("Analizuj Kartki"):
+        if not st.session_state['ml_card']: st.error("Trenuj!"); st.stop()
+        res=[]; mm=st.session_state['ml_card']
+        for i, r in st.session_state['pobrane_mecze'].iterrows():
+            ai = predict_generic(mm['m'], mm['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
+            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); avg = mat['card'] if mat else 0
+            sig = "🔥 OVER" if (ai>65 and avg>4.5) else ""
+            res.append({"Mecz": r['Label'], "AI >3.5": f"{ai:.0f}%", "Średnia": f"{avg:.1f}", "Sygnał": sig})
+        st.dataframe(pd.DataFrame(res), use_container_width=True)
+
+# --- ZAKŁADKI KLASYCZNE (OFFLINE CSV) ---
+elif page == "8. Schematy Ligowe":
+    st.header("🛡️ Schematy Ligowe (Łamaki CSV)")
+    if df is None: st.error("Pobierz bazę!"); st.stop()
+    if st.button("Szukaj Królów Łamaków"):
+        res = []
+        for t in list(set(df['HomeTeam'])):
+            d = df[(df['HomeTeam']==t)|(df['AwayTeam']==t)]
+            if len(d)<10: continue
+            cnt = len(d[((d['HTR']=='H')&(d['FTR']=='A'))|((d['HTR']=='A')&(d['FTR']=='H'))])
+            if cnt>0: res.append({'Drużyna':t, 'Mecze':len(d), 'Łamaki':cnt})
+        st.dataframe(pd.DataFrame(res).sort_values('Łamaki', ascending=False).head(20))
+
+elif page == "9. Przeciwnik":
+    st.header("⚔️ Szukanie Kata (Ofiary)")
+    if df is None: st.error("Pobierz bazę!"); st.stop()
+    my_team = st.text_input("Twoja drużyna:")
+    if st.button("Szukaj") and my_team:
+        res = []
+        for opp in list(set(df['HomeTeam'])):
+            if opp == my_team: continue
+            m = df[((df['HomeTeam']==my_team)&(df['AwayTeam']==opp)) | ((df['HomeTeam']==opp)&(df['AwayTeam']==my_team))]
+            wpadki = 0
+            for i, r in m.iterrows():
+                if r['HomeTeam']==my_team and r['HTR']=='H' and r['FTR']=='A': wpadki+=1
+                if r['AwayTeam']==my_team and r['HTR']=='A' and r['FTR']=='H': wpadki+=1
+            if wpadki > 0: res.append({'Rywal': opp, 'Wpadki': wpadki})
+        st.dataframe(pd.DataFrame(res))
+
+elif page == "10. Łamak 1/2":
+    st.header("🔄 Sprawdź H2H (CSV)")
     c1, c2 = st.columns(2)
-    h = c1.text_input("Gosp:", key="t3h"); a = c2.text_input("Gość:", key="t3a")
-    if st.button("Analiza HT/FT"):
-        rh, ra = find_teams(df, h, a)
+    t1 = c1.text_input("Drużyna 1:"); t2 = c2.text_input("Drużyna 2:")
+    if st.button("Sprawdź") and df is not None:
+        rh, ra = find_teams(df, t1, t2)
         if rh and ra:
-            h_all = df[(df['HomeTeam']==rh)|(df['AwayTeam']==rh)]
-            h_lam_total = len(h_all[((h_all['HTR']=='H')&(h_all['FTR']=='A'))|((h_all['HTR']=='A')&(h_all['FTR']=='H'))])
-            a_all = df[(df['HomeTeam']==ra)|(df['AwayTeam']==ra)]
-            a_lam_total = len(a_all[((a_all['HTR']=='H')&(a_all['FTR']=='A'))|((a_all['HTR']=='A')&(a_all['FTR']=='H'))])
-            mh = df[df['HomeTeam']==rh]; ma = df[df['AwayTeam']==ra]
-            h_lead = len(mh[mh['HTR']=='H']); h_choke = len(mh[(mh['HTR']=='H')&(mh['FTR']=='A')])
-            h_pct = (h_choke/h_lead*100) if h_lead > 0 else 0
-            a_trail = len(ma[ma['HTR']=='H']); a_come = len(ma[(ma['HTR']=='H')&(ma['FTR']=='A')])
-            a_pct = (a_come/a_trail*100) if a_trail > 0 else 0
-            avg_prob = (h_pct + a_pct) / 2
-            st.metric("Szansa HT/FT 1/2", f"{avg_prob:.1f}%")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write(f"**{rh}:**")
-                st.write(f"- Łamaków w historii: **{h_lam_total}**")
-                st.write(f"- Oddał mecz u siebie: {h_choke}")
-            with c2:
-                st.write(f"**{ra}:**")
-                st.write(f"- Łamaków w historii: **{a_lam_total}**")
-                st.write(f"- Odrobił na wyjeździe: {a_come}")
+            m = df[((df['HomeTeam']==rh)&(df['AwayTeam']==ra)) | ((df['HomeTeam']==ra)&(df['AwayTeam']==rh))]
+            st.dataframe(m[['Date','HomeTeam','AwayTeam','HTR','FTR']])
+        else: st.warning("Nie znaleziono w CSV.")
 
-elif selected_page == "4. H2H Kalendarz":
-    m = st.slider("Miesiąc:", 1, 12, datetime.now().month)
-    if st.button("Szukaj"):
-        lam = df[(((df['HTR']=='H')&(df['FTR']=='A'))|((df['HTR']=='A')&(df['FTR']=='H'))) & (df['Miesiac']==m)]
-        if not lam.empty:
-            pairs = lam.groupby(['HomeTeam','AwayTeam'])
-            res = []
-            for (h_t, a_t), g in pairs:
-                yrs = sorted(g['Rok'].unique(), reverse=True)
-                lata_str = ", ".join([str(int(y)) for y in yrs])
-                res.append({'Mecz': f"{h_t} vs {a_t}", 'Lata': lata_str})
-            st.dataframe(pd.DataFrame(res), use_container_width=True)
-        else: st.info("Brak.")
+elif page == "11. H2H Kalendarz":
+    st.header("📅 Kalendarz Łamaków")
+    miesiac = st.slider("Miesiąc:", 1, 12, datetime.now().month)
+    if st.button("Pokaż historię") and df is not None:
+        m = df[df['Miesiac'] == miesiac]
+        lamaki = m[((m['HTR']=='H')&(m['FTR']=='A'))|((m['HTR']=='A')&(m['FTR']=='H'))]
+        st.dataframe(lamaki[['Date','HomeTeam','AwayTeam','HTR','FTR']])
 
-elif selected_page == "5. Gole (xG)":
-    c1, c2 = st.columns(2); h5 = c1.text_input("H:", key="t5h"); a5 = c2.text_input("A:", key="t5a")
-    if st.button("Oblicz"):
-        rh, ra = find_teams(df, h5, a5)
+elif page == "12. Gole xG (Calc)":
+    st.header("⚽ Kalkulator Goli")
+    c1, c2 = st.columns(2)
+    t1 = c1.text_input("Home:"); t2 = c2.text_input("Away:")
+    if st.button("Licz") and df is not None:
+        res = calc_math_csv(df, t1, t2)
+        if res: 
+            p = res['pois']
+            st.success(f"Over 1.5: {p['O15']:.1f}% | Over 2.5: {p['O25']:.1f}% | BTTS: {p['BTTS']:.1f}%")
+
+elif page == "13. Remisy":
+    st.header("⚖️ Szukanie Remisów")
+    if st.button("Pokaż Ligi Remisowe") and df is not None:
+        res = df.groupby('Liga')['FTR'].apply(lambda x: (x=='D').mean()).sort_values(ascending=False)
+        st.write(res)
+
+elif page == "14. Dokładny Wynik":
+    st.header("🎯 Dokładny Wynik")
+    c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
+    if st.button("Symuluj") and df is not None:
+        rh, ra = find_teams(df, t1, t2)
         if rh and ra:
-            metrics = calculate_metrics(df, rh, ra)
-            if metrics:
-                xg_h, xg_a = metrics['xg_h'], metrics['xg_a']
-                probs, _ = poisson_probability(xg_h, xg_a)
-                st.markdown("### 📊 Prawdopodobieństwo Goli")
-                st.write(f"Przewidywane xG: {xg_h:.2f} - {xg_a:.2f}")
-                c_ov, c_un = st.columns(2)
-                with c_ov:
-                    st.success("OVER (Powyżej)")
-                    st.write(f"**Over 1.5:** {probs['O1.5']*100:.1f}%")
-                    st.write(f"**Over 2.5:** {probs['O2.5']*100:.1f}%")
-                with c_un:
-                    st.error("UNDER (Poniżej)")
-                    st.write(f"**Under 1.5:** {(1-probs['O1.5'])*100:.1f}%")
-                    st.write(f"**Under 2.5:** {(1-probs['O2.5'])*100:.1f}%")
-            else: st.error("Za mało danych.")
+            m = df[((df['HomeTeam']==rh)|(df['AwayTeam']==rh))].tail(10)
+            avg_g = (m['FTHG'].sum()+m['FTAG'].sum())/len(m)
+            st.info(f"Średnia goli w meczach {rh}: {avg_g:.1f}")
 
-elif selected_page == "6. Remisy":
-    c1, c2 = st.columns(2); h6=c1.text_input("H:", key="t6h"); a6=c2.text_input("A:", key="t6a")
-    if st.button("Analiza Sił"):
-        rh, ra = find_teams(df, h6, a6)
-        if rh and ra:
-            metrics = calculate_metrics(df, rh, ra)
-            if metrics:
-                probs, _ = poisson_probability(metrics['xg_h'], metrics['xg_a'])
-                st.metric("Szansa na Remis", f"{probs['X']*100:.1f}%")
-                if abs(metrics['xg_h'] - metrics['xg_a']) < 0.2: 
-                    st.success("Wyrównany mecz!")
+elif page == "15. Rożne (Calc)":
+    st.header("⛳ Rożne Statystyki")
+    c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
+    if st.button("Licz Rożne") and df is not None:
+        res = calc_math_csv(df, t1, t2)
+        if res: st.success(f"Średnia rożnych (H+A): {res['corn']:.1f}")
 
-elif selected_page == "7. Dokładny Wynik":
-    c1, c2 = st.columns(2); h7=c1.text_input("H:", key="t7h"); a7=c2.text_input("A:", key="t7a")
-    if st.button("Symulacja"):
-        rh, ra = find_teams(df, h7, a7)
-        if rh and ra:
-            metrics = calculate_metrics(df, rh, ra)
-            if metrics:
-                _, matrix = poisson_probability(metrics['xg_h'], metrics['xg_a'])
-                st.table(pd.DataFrame(matrix, columns=['Wynik', 'Szansa %']).head(5))
+elif page == "16. Kartki (Calc)":
+    st.header("🟨 Kartki Statystyki")
+    c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
+    if st.button("Licz Kartki") and df is not None:
+        res = calc_math_csv(df, t1, t2)
+        if res: st.success(f"Średnia kartek (H+A): {res['card']:.1f}")
 
-elif selected_page == "8. Rożne":
-    c1, c2 = st.columns(2); h8=c1.text_input("H:", key="t8h"); a8=c2.text_input("A:", key="t8a")
-    if st.button("Analiza Rożnych"):
-        rh, ra = find_teams(df, h8, a8)
-        if rh:
-            dfc = df[df['HC']>0]
-            mh = dfc[dfc['HomeTeam']==rh].tail(10); ma = dfc[dfc['AwayTeam']==ra].tail(10)
-            if not mh.empty and not ma.empty:
-                h_crn = (mh['HC'].mean() + ma['HC'].mean()) / 2
-                a_crn = (ma['AC'].mean() + mh['AC'].mean()) / 2
-                total = h_crn + a_crn
-                st.metric("Linia Rożnych", f"{total:.1f}")
-                st.write(f"Gosp: {h_crn:.1f}, Gość: {a_crn:.1f}")
-            else: st.warning("Brak danych.")
+elif page == "17. BTTS (Calc)":
+    st.header("🤝 BTTS Manual")
+    c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
+    if st.button("Licz BTTS") and df is not None:
+        res = calc_math_csv(df, t1, t2)
+        if res: st.success(f"Matematyczna szansa BTTS: {res['pois']['BTTS']:.1f}%")
 
-elif selected_page == "9. Kartki":
-    c1, c2 = st.columns(2); h9=c1.text_input("H:", key="t9h"); a9=c2.text_input("A:", key="t9a")
-    if st.button("Analiza Kartek"):
-        rh, ra = find_teams(df, h9, a9)
-        if rh:
-            dfc = df[(df['HY']+df['AY'])>0]
-            mh = dfc[dfc['HomeTeam']==rh].tail(15); ma = dfc[dfc['AwayTeam']==ra].tail(15)
-            if not mh.empty and not ma.empty:
-                h_cards = mh['HY'].mean() + mh['HR'].mean()
-                a_cards = ma['AY'].mean() + ma['AR'].mean()
-                exp_cards = (h_cards + a_cards)
-                st.metric("Przewidywana liczba kartek", f"{exp_cards:.1f}")
-                c_ov, c_un = st.columns(2)
-                with c_ov:
-                    st.success(f"📈 OVER {math.floor(exp_cards - 0.5)}.5")
-                with c_un:
-                    st.error(f"📉 UNDER {math.ceil(exp_cards + 0.5)}.5")
-            else: st.warning("Brak danych.")
+elif page == "18. Pewniaki 1X2":
+    st.header("💎 Skaner Faworytów (CSV)")
+    if st.button("Skanuj ostatnie 200 meczów") and df is not None:
+        last = df.tail(200)
+        faworyci = last[(last['FTHG'] > 2) & (last['FTAG'] == 0)]
+        st.dataframe(faworyci[['Date','HomeTeam','AwayTeam','FTHG','FTAG']])
 
-elif selected_page == "10. BTTS":
-    c1, c2 = st.columns(2); h10=c1.text_input("H:", key="t10h"); a10=c2.text_input("A:", key="t10a")
-    if st.button("Sprawdź BTTS"):
-        rh, ra = find_teams(df, h10, a10)
-        if rh and ra:
-            metrics = calculate_metrics(df, rh, ra)
-            if metrics:
-                probs, _ = poisson_probability(metrics['xg_h'], metrics['xg_a'])
-                st.metric("Szansa BTTS", f"{probs['BTTS']*100:.1f}%")
-
-# --- NOWA ZAKŁADKA: ŁAMAKI ---
-elif selected_page == "11. Perełki (Łamaki)":
-    st.info("Ta funkcja szuka potencjalnych odwróceń meczu (HT/FT). Pamiętaj, że są to zdarzenia rzadkie!")
-    thr = st.slider("Minimalny potencjał (%)", 5, 50, 10)
-    
-    if st.button("Szukaj Łamaków (1/2 i 2/1)"):
-        with st.spinner("Analizuję historię..."):
-            matches = []
-            recent = df.tail(300) # Ostatnie 300 meczów do wyłowienia par
-            
-            # Skanujemy unikalne pary
-            unique_pairs = recent[['HomeTeam', 'AwayTeam']].drop_duplicates()
-            
-            for index, row in unique_pairs.iterrows():
-                h, a = row['HomeTeam'], row['AwayTeam']
-                
-                # Pobieramy historię dla tej pary (lub drużyn ogólnie)
-                mh = df[df['HomeTeam'] == h]
-                ma = df[df['AwayTeam'] == a]
-                
-                if len(mh) < 5 or len(ma) < 5: continue
-                
-                # 1. SCENARIUSZ 1/2 (Dom prowadzi HT -> Gość wygrywa FT)
-                # Dom: Ile razy oddał prowadzenie (HT:H -> FT:A)
-                h_lead = len(mh[mh['HTR']=='H'])
-                h_loss = len(mh[(mh['HTR']=='H') & (mh['FTR']=='A')])
-                h_choke_ratio = (h_loss / h_lead) if h_lead > 0 else 0
-                
-                # Wyjazd: Ile razy odrobił (HT:H -> FT:A)
-                a_trail = len(ma[ma['HTR']=='H'])
-                a_win = len(ma[(ma['HTR']=='H') & (ma['FTR']=='A')])
-                a_comeback_ratio = (a_win / a_trail) if a_trail > 0 else 0
-                
-                prob_1_2 = ((h_choke_ratio + a_comeback_ratio) / 2) * 100
-                
-                # 2. SCENARIUSZ 2/1 (Gość prowadzi HT -> Dom wygrywa FT)
-                # Dom: Ile razy odrobił (HT:A -> FT:H)
-                h_trail_2 = len(mh[mh['HTR']=='A'])
-                h_win_2 = len(mh[(mh['HTR']=='A') & (mh['FTR']=='H')])
-                h_comeback_ratio = (h_win_2 / h_trail_2) if h_trail_2 > 0 else 0
-                
-                # Wyjazd: Ile razy oddał prowadzenie (HT:A -> FT:H)
-                a_lead_2 = len(ma[ma['HTR']=='A'])
-                a_loss_2 = len(ma[(ma['HTR']=='A') & (ma['FTR']=='H')])
-                a_choke_ratio = (a_loss_2 / a_lead_2) if a_lead_2 > 0 else 0
-                
-                prob_2_1 = ((h_comeback_ratio + a_choke_ratio) / 2) * 100
-                
-                if prob_1_2 >= thr:
-                    matches.append({'Mecz': f"{h} vs {a}", 'Typ': '1/2 (Łamak)', 'Potencjał': f"{prob_1_2:.1f}%"})
-                
-                if prob_2_1 >= thr:
-                    matches.append({'Mecz': f"{h} vs {a}", 'Typ': '2/1 (Łamak)', 'Potencjał': f"{prob_2_1:.1f}%"})
-            
-            if matches:
-                st.success(f"Znaleziono {len(matches)} kandydatów!")
-                st.dataframe(pd.DataFrame(matches).sort_values('Potencjał', ascending=False), use_container_width=True)
-            else:
-                st.warning("Brak kandydatów spełniających kryteria. Zmniejsz suwak.")
-
-# --- NOWA ZAKŁADKA: PEWNIAKI 1X2 ---
-elif selected_page == "12. Pewniaki (1X2)":
-    st.info("Szukam wysokiego prawdopodobieństwa na wygraną Gospodarza (1) lub Gościa (2).")
-    thr = st.slider("Minimalna pewność (%)", 40, 95, 60)
-    
-    if st.button("Szukaj Pewniaków"):
-        with st.spinner("Analiza xG i Poissona..."):
-            matches = []
-            recent = df.tail(200)
-            
-            for index, row in recent.iterrows():
-                h, a = row['HomeTeam'], row['AwayTeam']
-                metrics = calculate_metrics(df, h, a)
-                if metrics:
-                    probs, _ = poisson_probability(metrics['xg_h'], metrics['xg_a'])
-                    
-                    p_home = probs['1'] * 100
-                    p_away = probs['2'] * 100
-                    
-                    if p_home >= thr:
-                        matches.append({'Mecz': f"{h} vs {a}", 'Typ': '1 (Dom)', 'Szansa': f"{p_home:.1f}%"})
-                    elif p_away >= thr:
-                        matches.append({'Mecz': f"{h} vs {a}", 'Typ': '2 (Wyjazd)', 'Szansa': f"{p_away:.1f}%"})
-            
-            if matches:
-                st.dataframe(pd.DataFrame(matches).sort_values('Szansa', ascending=False), use_container_width=True)
-            else:
-                st.info("Brak pewniaków o takiej skuteczności.")
-
-elif selected_page == "13. Słownik":
+elif page == "19. Słownik":
+    st.header("📖 Słownik Drużyn")
     q = st.text_input("Szukaj:")
-    if q:
-        all_t = sorted(list(set(df['HomeTeam'].dropna()) | set(df['AwayTeam'].dropna())))
-        m = [t for t in all_t if q.lower() in str(t).lower()]
-        st.write(m)
+    if df is not None and q:
+        ts = sorted(list(set(df['HomeTeam'])|set(df['AwayTeam'])))
+        st.write([t for t in ts if q.lower() in t.lower()])
