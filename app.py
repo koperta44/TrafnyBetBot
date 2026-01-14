@@ -18,43 +18,31 @@ try:
 except:
     icon = "⚽"
 
-st.set_page_config(page_title="TrafnyBetBot 2.0", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TrafnyBetBot 2.0 (DIRECT)", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
     .stApp {background-color: #1e1e1e; color: #e0e0e0;}
-    
-    /* Przyciski Główne */
     div.stButton > button {
         width: 100%; border-radius: 8px; font-weight: bold; height: 3em; transition: 0.2s;
         background: linear-gradient(135deg, #8742f5 0%, #5e17eb 100%); border: none; color: white;
         box-shadow: 0 4px 15px rgba(135, 66, 245, 0.3);
     }
-    div.stButton > button:hover { transform: scale(1.02); }
-    
-    /* Dual Core Buttons w Koszyku */
     div[data-testid="column"]:nth-of-type(1) .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); /* Fiolet Standard */
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     div[data-testid="column"]:nth-of-type(2) .stButton > button {
-        background: linear-gradient(135deg, #f09819 0%, #ff512f 100%); /* Ogień PRO */
+        background: linear-gradient(135deg, #f09819 0%, #ff512f 100%);
         box-shadow: 0 0 10px rgba(255, 81, 47, 0.4);
     }
-
-    /* Statusy */
     .status-box { padding: 10px; border-radius: 5px; margin-bottom: 10px; text-align: center; font-weight: bold; }
     .status-red { background-color: #4a0e0e; color: #ff9999; border: 1px solid #ff4444; }
     .status-green { background-color: #0e4a1e; color: #99ff99; border: 1px solid #44ff44; }
-    
-    /* Ramki */
     .watchlist-box { background-color: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #8742f5; }
-    .top-pick-box { background-color: #1b3a2b; padding: 15px; border-radius: 10px; border: 2px solid #2ecc71; margin-bottom: 20px; }
     .ml-box { background-color: #2c0b0e; padding: 10px; border-radius: 5px; border: 1px solid #e74c3c; margin-top: 5px; font-size: 0.9em; }
-    
     [data-testid="stMetricValue"] {font-size: 1.0rem !important; color: #ffcc00;}
     </style>
     """, unsafe_allow_html=True)
-
 # --- 2. ZMIENNE I BAZA LIG (MAXIMUM) ---
 # To jest pełna lista obsługiwana przez darmowe CSV
 LIGI_KODY = {
@@ -75,12 +63,9 @@ LIGI_KODY = {
 }
 
 USAGE_FILE = "api_usage.json"
-# Inicjalizacja stanów
 if 'watchlist' not in st.session_state: st.session_state['watchlist'] = []
 if 'df' not in st.session_state: st.session_state['df'] = None
 if 'pobrane_mecze' not in st.session_state: st.session_state['pobrane_mecze'] = pd.DataFrame()
-
-# Modele ML
 models = ['ml_htft', 'ml_1x2', 'ml_btts', 'ml_ou15', 'ml_ou25', 'ml_corn', 'ml_card']
 for k in models:
     if k not in st.session_state: st.session_state[k] = None
@@ -101,11 +86,10 @@ def increment_usage(amount):
     with open(USAGE_FILE, 'w') as f: json.dump({"date": today, "count": new_total}, f)
     return new_total
 
-# --- 4. CSV LOADER (OFFLINE) ---
+# --- 4. CSV LOADER ---
 def clean_df(df, n, s):
     df.columns = [c.strip() for c in df.columns]
     df = df.rename(columns={'Home':'HomeTeam','Away':'AwayTeam','Res':'FTR','Result':'FTR'})
-    # Konwersja kolumn statystycznych
     cols = ['FTHG','FTAG','HC','AC','HY','AY']
     for c in cols:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int8')
@@ -125,57 +109,68 @@ def pobierz_baze_csv(ile_lat=5):
     curr_y = 25; start_y = curr_y - ile_lat
     sezony = [f"{i:02d}{i+1:02d}" for i in range(start_y, curr_y+1)]; sezony.reverse()
     wszystkie = []
-    
     prog = st.progress(0); step=0; tot=len(LIGI_KODY)*(len(sezony)+1)
-    
-    # 1. Główne ligi (folder /new/)
     for n, k in LIGI_KODY.items():
         try:
             r = requests.get(f"https://www.football-data.co.uk/new/{k}.csv", timeout=1)
-            if r.status_code==200: 
-                df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,"Cur"); wszystkie.append(df)
+            if r.status_code==200: df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,"Cur"); wszystkie.append(df)
         except: pass
         step+=1; prog.progress(min(step/tot,1.0))
-        
-    # 2. Archiwum (folder /mmz4281/)
     for s in sezony:
         for n, k in LIGI_KODY.items():
             try:
                 r = requests.get(f"https://www.football-data.co.uk/mmz4281/{s}/{k}.csv", timeout=1)
-                if r.status_code==200: 
-                    df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,s); wszystkie.append(df)
+                if r.status_code==200: df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,s); wszystkie.append(df)
             except: pass
         step+=1; prog.progress(min(step/tot,1.0))
-        
     prog.empty()
     if wszystkie: return pd.concat(wszystkie, ignore_index=True).drop_duplicates()
     return pd.DataFrame()
 
-# --- 5. API FUNKCJE ---
+# --- 5. API FUNKCJE (DIRECT API-SPORTS) ---
+# ZMIANA URL NA v3.football.api-sports.io i HEADER NA x-apisports-key
+
 def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
-    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
-    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    url = "https://v3.football.api-sports.io/fixtures" # <--- ZMIANA ADRESU
+    headers = {"x-apisports-key": api_key}             # <--- ZMIANA KLUCZA
     wszystkie = []
     increment_usage(dni_w_przod) 
+    
+    # DEBUG - Pokazujemy błędy
+    st.info(f"Łączenie z API (Direct)...")
+
     for i in range(dni_w_przod):
         d = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
         try:
-            r = requests.get(url, headers=headers, params={"date": d}); data = r.json()
+            r = requests.get(url, headers=headers, params={"date": d})
+            
+            if r.status_code != 200:
+                st.error(f"Błąd API: {r.status_code} - {r.text}")
+                return pd.DataFrame()
+
+            data = r.json()
             if 'response' in data:
                 for item in data['response']:
                     wszystkie.append({
-                        'ID_Meczu': item['fixture']['id'], 'ID_Home': item['teams']['home']['id'], 'ID_Away': item['teams']['away']['id'],
-                        'Data': d, 'Godzina': item['fixture']['date'][11:16],
-                        'Liga': item['league']['name'], 'HomeTeam': item['teams']['home']['name'], 'AwayTeam': item['teams']['away']['name'],
+                        'ID_Meczu': item['fixture']['id'], 
+                        'ID_Home': item['teams']['home']['id'], 
+                        'ID_Away': item['teams']['away']['id'],
+                        'Data': d, 
+                        'Godzina': item['fixture']['date'][11:16],
+                        'Liga': item['league']['name'], 
+                        'HomeTeam': item['teams']['home']['name'], 
+                        'AwayTeam': item['teams']['away']['name'],
                         'Label': f"{item['league']['name']} | {item['teams']['home']['name']} vs {item['teams']['away']['name']}",
                         'Miesiac': datetime.now().month
                     })
-        except: pass
+        except Exception as e:
+            st.error(f"Błąd połączenia: {e}")
+            
     return pd.DataFrame(wszystkie)
 
 def pobierz_sklady_api(api_key, fixture_id):
-    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures/lineups"
-    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    url = "https://v3.football.api-sports.io/fixtures/lineups" # <--- ZMIANA
+    headers = {"x-apisports-key": api_key}                     # <--- ZMIANA
     increment_usage(1)
     try:
         r = requests.get(url, headers=headers, params={"fixture": fixture_id}); d = r.json()
@@ -189,8 +184,8 @@ def pobierz_sklady_api(api_key, fixture_id):
     except: return [], []
 
 def analizuj_h2h_api(api_key, h_id, a_id):
-    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures/headtohead"
-    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    url = "https://v3.football.api-sports.io/fixtures/headtohead" # <--- ZMIANA
+    headers = {"x-apisports-key": api_key}                        # <--- ZMIANA
     increment_usage(1)
     try:
         r = requests.get(url, headers=headers, params={"h2h": f"{h_id}-{a_id}"}); d = r.json()
@@ -208,11 +203,9 @@ def analizuj_h2h_api(api_key, h_id, a_id):
     except: return [], "Err", "Err"
 
 def analizuj_forme_api(api_key, h_id, a_id):
-    """LIVE PRO: Forma LIVE z ostatnich 15 meczów."""
-    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
-    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    url = "https://v3.football.api-sports.io/fixtures" # <--- ZMIANA
+    headers = {"x-apisports-key": api_key}             # <--- ZMIANA
     increment_usage(2) 
-    
     def check_team(tid):
         p = {"team": tid, "last": "15", "status": "FT"}
         try:
@@ -224,11 +217,9 @@ def analizuj_forme_api(api_key, h_id, a_id):
                     is_home = (m['teams']['home']['id'] == tid)
                     gh = g['home'] if is_home else g['away']; ga = g['away'] if is_home else g['home']
                     if gh is not None: s+=gh; c+=ga; cnt+=1
-                    
                     if sc['halftime']['home'] is None: continue
                     hh, ha = sc['halftime']['home'], sc['halftime']['away']
                     fh, fa = sc['fulltime']['home'], sc['fulltime']['away']
-                    
                     if is_home:
                         if hh>ha and fh<fa: l12+=1
                         if hh<ha and fh>fa: l21+=1
@@ -237,10 +228,8 @@ def analizuj_forme_api(api_key, h_id, a_id):
                         if ha<hh and fa>fh: l21+=1
             return (s/cnt if cnt else 1.0), (c/cnt if cnt else 1.0), l12, l21
         except: return 1.0, 1.0, 0, 0
-
     ha, hd, h12, h21 = check_team(h_id); aa, ad, a12, a21 = check_team(a_id)
     xg_h = ha * ad * 1.1; xg_a = aa * hd
-    
     def pois(k, l): return (math.exp(-l)*(l**k))/math.factorial(k)
     probs = {'1':0,'X':0,'2':0,'BTTS':0,'O15':0,'O25':0}
     for i in range(6):
@@ -252,7 +241,6 @@ def analizuj_forme_api(api_key, h_id, a_id):
             if i>0 and j>0: probs['BTTS']+=p
             if i+j > 1.5: probs['O15']+=p
             if i+j > 2.5: probs['O25']+=p
-            
     return {'pois': {k: v*100 for k,v in probs.items()}, 'live': {'1_2': h12+a12, '2_1': h21+a21}}
 
 # --- 6. ML (MODELE) ---
@@ -342,13 +330,12 @@ def find_teams(df, h, a):
 
 # --- INTERFEJS SIDEBAR ---
 with st.sidebar:
-    # --- DODANY KOD DO LOGO ---
-    try:
-        st.image("icon.png", use_column_width=True) # Wyświetla duże logo
-    except:
-        st.header("⚽") # Jeśli brak pliku, pokazuje piłkę
-    # --------------------------
-    api_key = st.text_input("Klucz RapidAPI:", type="password")
+    # LOGO
+    try: st.image("icon.png", use_column_width=True)
+    except: st.header("⚽")
+    
+    st.title("TrafnyBetBot 2.0 (Direct)")
+    api_key = st.text_input("Klucz API-Sports:", type="password") # Zmieniono opis
     st.markdown("---")
     
     if st.session_state['df'] is None:
