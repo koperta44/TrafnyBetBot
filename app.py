@@ -24,26 +24,43 @@ st.set_page_config(page_title="TrafnyBetBot 2.0", page_icon=icon, layout="wide",
 st.markdown("""
     <style>
     .stApp {background-color: #1e1e1e; color: #e0e0e0;}
+    
+    /* Przyciski Główne */
     div.stButton > button {
         width: 100%; border-radius: 8px; font-weight: bold; height: 3em; transition: 0.2s;
         background: linear-gradient(135deg, #8742f5 0%, #5e17eb 100%); border: none; color: white;
         box-shadow: 0 4px 15px rgba(135, 66, 245, 0.3);
     }
     div.stButton > button:hover { transform: scale(1.02); }
+    
+    /* Guziki w Radarze (Gwiazdka) */
+    .radar-btn > button {
+        height: 2.5em; background: #333; border: 1px solid #555;
+    }
+
+    /* Dual Core Buttons */
     div[data-testid="column"]:nth-of-type(1) .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     div[data-testid="column"]:nth-of-type(2) .stButton > button {
         background: linear-gradient(135deg, #f09819 0%, #ff512f 100%);
-        box-shadow: 0 0 10px rgba(255, 81, 47, 0.4);
     }
+
+    /* Ramki */
     .watchlist-box { background-color: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #8742f5; }
     .math-box { background-color: #1b3a2b; padding: 10px; border-radius: 5px; border: 1px solid #2ecc71; margin-bottom: 5px; height: 100%; }
     .ml-box { background-color: #2c0b0e; padding: 10px; border-radius: 5px; border: 1px solid #e74c3c; margin-bottom: 5px; height: 100%; }
+    
+    /* Kolory statusów meczu */
+    .match-future { color: #2ecc71; font-weight: bold; } /* Zielony */
+    .match-live { color: #f1c40f; font-weight: bold; animation: pulse 2s infinite; } /* Żółty */
+    .match-past { color: #e74c3c; font-weight: bold; text-decoration: line-through; } /* Czerwony */
+    
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    
     [data-testid="stMetricValue"] {font-size: 1.0rem !important; color: #ffcc00;}
     </style>
     """, unsafe_allow_html=True)
-
 # --- 2. MAKSYMALNA LISTA LIG DOSTĘPNA W DARMOWYM CSV ---
 LIGI_KODY = {
     # WIELKA BRYTANIA
@@ -92,11 +109,10 @@ LIGI_KODY = {
     "Szwajcaria": "SWZ", 
     "USA - MLS": "USA"
 }
-
 USAGE_FILE = "api_usage.json"
 if 'watchlist' not in st.session_state: st.session_state['watchlist'] = []
 if 'df' not in st.session_state: st.session_state['df'] = None
-if 'pobrane_mecze' not in st.session_state: st.session_state['pobrane_mecze'] = pd.DataFrame()
+if 'pobrane_mecze' not in st.session_state: st.session_state['pobrane_mecze'] = []
 for k in ['ml_htft', 'ml_1x2', 'ml_btts', 'ml_ou15', 'ml_ou25', 'ml_corn', 'ml_card']:
     if k not in st.session_state: st.session_state[k] = None
 
@@ -137,18 +153,16 @@ def pobierz_baze_csv(ile_lat=5):
     curr_y = 25; start_y = curr_y - ile_lat
     sezony = [f"{i:02d}{i+1:02d}" for i in range(start_y, curr_y+1)]; sezony.reverse()
     wszystkie = []
-    
     prog = st.progress(0); step=0; tot=len(LIGI_KODY)*(len(sezony)+1)
     
-    # 1. New (Główne ligi)
+    # 1. New
     for n, k in LIGI_KODY.items():
         try:
             r = requests.get(f"https://www.football-data.co.uk/new/{k}.csv", timeout=1)
             if r.status_code==200: df=pd.read_csv(io.StringIO(r.text)); df=clean_df(df,n,"Cur"); wszystkie.append(df)
         except: pass
         step+=1; prog.progress(min(step/tot,1.0))
-        
-    # 2. History (Archiwum)
+    # 2. History
     for s in sezony:
         for n, k in LIGI_KODY.items():
             try:
@@ -161,7 +175,7 @@ def pobierz_baze_csv(ile_lat=5):
     if wszystkie: return pd.concat(wszystkie, ignore_index=True).drop_duplicates()
     return pd.DataFrame()
 
-# --- 5. API DIRECT (Fix Skaner + Error Handling) ---
+# --- 5. API DIRECT ---
 API_URL = "https://v3.football.api-sports.io"
 
 def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
@@ -169,39 +183,39 @@ def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
     wszystkie = []
     increment_usage(dni_w_przod) 
     
-    st.info(f"📡 Łączenie z API... (Szukam meczów)")
+    st.info(f"📡 Pobieranie meczów...")
 
     for i in range(dni_w_przod):
         d = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
         try:
             r = requests.get(f"{API_URL}/fixtures", headers=headers, params={"date": d}, timeout=10)
-            
             if r.status_code != 200:
-                st.error(f"❌ BŁĄD API: {r.status_code}. Sprawdź klucz!")
-                return pd.DataFrame() # Przerwij
+                st.error(f"❌ BŁĄD API: {r.status_code}")
+                return []
             
             data = r.json()
             if 'response' in data:
-                liczba = len(data['response'])
-                if liczba > 0:
-                    for item in data['response']:
-                        wszystkie.append({
-                            'ID_Meczu': item['fixture']['id'], 
-                            'ID_Home': item['teams']['home']['id'], 'ID_Away': item['teams']['away']['id'],
-                            'Data': d, 'Godzina': item['fixture']['date'][11:16],
-                            'Liga': item['league']['name'], 
-                            'HomeTeam': item['teams']['home']['name'], 'AwayTeam': item['teams']['away']['name'],
-                            'Label': f"{item['league']['name']} | {item['teams']['home']['name']} vs {item['teams']['away']['name']}",
-                            'Miesiac': datetime.now().month
-                        })
-                else: st.warning(f"Brak meczów w dniu {d}")
+                for item in data['response']:
+                    dt_str = item['fixture']['date']
+                    full_dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    
+                    wszystkie.append({
+                        'ID_Meczu': item['fixture']['id'], 
+                        'ID_Home': item['teams']['home']['id'], 'ID_Away': item['teams']['away']['id'],
+                        'Data': d, 
+                        'Godzina': full_dt.strftime("%H:%M"), 
+                        'Timestamp': full_dt.timestamp(), 
+                        'Liga': item['league']['name'], 
+                        'HomeTeam': item['teams']['home']['name'], 'AwayTeam': item['teams']['away']['name'],
+                        'Label': f"{item['league']['name']} | {item['teams']['home']['name']} vs {item['teams']['away']['name']}",
+                        'Miesiac': datetime.now().month
+                    })
         except Exception as e: 
-            st.error(f"Błąd połączenia: {e}")
-            return pd.DataFrame()
-            
+            st.error(f"Błąd: {e}"); return []
         time.sleep(0.5)
 
-    return pd.DataFrame(wszystkie)
+    wszystkie = sorted(wszystkie, key=lambda x: x['Timestamp'])
+    return wszystkie
 
 def pobierz_sklady_api(api_key, fixture_id):
     headers = {"x-apisports-key": api_key}
@@ -373,7 +387,7 @@ with st.sidebar:
     
     if st.session_state['df'] is None:
         if st.button("📥 POBIERZ BAZĘ (Wszystkie Ligi)"):
-            with st.spinner("Pobieranie 5 lat historii (Wszystkie ligi)..."): 
+            with st.spinner("Pobieranie 5 lat historii..."): 
                 st.session_state['df'] = pobierz_baze_csv(5)
                 st.rerun()
     else:
@@ -397,8 +411,8 @@ with st.sidebar:
     st.caption("🚀 NOWOCZESNE (API+ML)")
     menu_api = ["1. RADAR (Skanuj)", "⭐ KOSZYK (Dual Core)", "🧠 1X2 (AI)", "🤝 BTTS (AI)", "⚽ GOLE (AI Over/Under)", "⛳ ROŻNE (AI)", "🟨 KARTKI (AI)"]
     st.caption("📚 KLASYCZNE (CSV Offline)")
-    menu_csv = ["8. Schematy Ligowe", "9. Przeciwnik", "10. Łamak H2H", "11. H2H Kalendarz", "12. Gole xG (Calc)", 
-                "13. Remisy", "14. Dokładny Wynik", "15. Rożne (Calc)", "16. Kartki (Calc)", "17. BTTS (Calc)", 
+    menu_csv = ["8. Schematy Ligowe", "9. Przeciwnik", "10. Łamak H2H (CSV+ML)", "11. H2H Kalendarz", "12. Gole xG (Calc+ML)", 
+                "13. Remisy", "14. Dokładny Wynik", "15. Rożne (Calc+ML)", "16. Kartki (Calc+ML)", "17. BTTS (Calc+ML)", 
                 "18. Pewniaki 1X2", "19. Słownik"]
     
     page = st.selectbox("Wybierz moduł:", menu_api + menu_csv)
@@ -410,17 +424,37 @@ if page == "1. RADAR (Skanuj)":
     st.header("📡 Radar Meczowy")
     if st.button("🚀 SKANUJ (3 pkt)"):
         if used>=100: st.error("Limit!"); st.stop()
-        if not api_key: st.error("❌ WPISZ KLUCZ API W PASKU BOCZNYM!"); st.stop()
+        if not api_key: st.error("❌ WPISZ KLUCZ API!"); st.stop()
         with st.spinner("Pobieranie terminarza..."):
             st.session_state['pobrane_mecze'] = pobierz_mecze_zakres_api(api_key, 3); st.rerun()
-    if not st.session_state['pobrane_mecze'].empty:
-        m = st.session_state['pobrane_mecze']
-        st.dataframe(m[['Data','Liga','HomeTeam','AwayTeam']], use_container_width=True)
-        sel = st.selectbox("Wybierz:", m['Label'])
-        if st.button("Dodaj do Koszyka"):
-            row = m[m['Label']==sel].iloc[0].to_dict()
-            if not any(x['Label']==sel for x in st.session_state['watchlist']):
-                st.session_state['watchlist'].append(row); st.success("Dodano!")
+
+    if st.session_state['pobrane_mecze']:
+        st.write("---")
+        mecze = st.session_state['pobrane_mecze']
+        teraz = datetime.now().timestamp()
+        
+        c1, c2, c3, c4 = st.columns([1, 1, 3, 1])
+        c1.write("**Data**"); c2.write("**Godzina**"); c3.write("**Mecz**"); c4.write("**Koszyk**")
+        
+        for m in mecze:
+            ts = m['Timestamp']
+            style_cls = "match-future"; status_icon = "🟢"
+            if ts < teraz:
+                if ts + (130*60) > teraz:
+                    style_cls = "match-live"; status_icon = "🟡 LIVE"
+                else:
+                    style_cls = "match-past"; status_icon = "🔴 KONIEC"
+
+            row1, row2, row3, row4 = st.columns([1, 1, 3, 1])
+            with row1: st.write(m['Data'])
+            with row2: st.markdown(f"<span class='{style_cls}'>{m['Godzina']} <br>{status_icon}</span>", unsafe_allow_html=True)
+            with row3: st.write(m['Label'])
+            with row4:
+                btn_key = f"btn_add_{m['ID_Meczu']}"
+                if st.button("⭐ Dodaj", key=btn_key):
+                    if not any(x['Label']==m['Label'] for x in st.session_state['watchlist']):
+                        st.session_state['watchlist'].append(m)
+                        st.toast(f"Dodano: {m['Label']}")
 
 elif page == "⭐ KOSZYK (Dual Core)":
     st.header("⭐ Centrum Decyzyjne")
@@ -474,18 +508,21 @@ elif page == "⭐ KOSZYK (Dual Core)":
                 else: st.write("Home:", r['sh']); st.write("Away:", r['sa'])
                 st.write(r['h'])
 
+# --- ZAKŁADKI ML ---
 elif page == "🧠 1X2 (AI)":
     st.header("🧠 1X2"); 
     if st.button("Analizuj 1X2"):
         if not st.session_state['ml_1x2']: st.error("Trenuj!"); st.stop()
         res=[]; mm=st.session_state['ml_1x2']
-        for i, r in st.session_state['pobrane_mecze'].iterrows():
-            p = predict_1x2(mm['m'], mm['s'], mm['l'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
-            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); mp = mat['pois'] if mat else {}
+        pobrane = st.session_state['pobrane_mecze']
+        if not pobrane: st.error("Najpierw Skanuj w Radarze!"); st.stop()
+        for m in pobrane:
+            p = predict_1x2(mm['m'], mm['s'], mm['l'], m['Miesiac'], m['HomeTeam'], m['AwayTeam'])
+            mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam']); mp = mat['pois'] if mat else {}
             sig=""
             if p.get('H',0)>60 and mp.get('1',0)>55: sig="🔥 1"
             if p.get('A',0)>60 and mp.get('2',0)>55: sig="🔥 2"
-            res.append({"Mecz": r['Label'], "AI 1": f"{p.get('H',0):.0f}%", "Mat 1": f"{mp.get('1',0):.0f}%", "Sygnał": sig})
+            res.append({"Mecz": m['Label'], "AI 1": f"{p.get('H',0):.0f}%", "Mat 1": f"{mp.get('1',0):.0f}%", "Sygnał": sig})
         st.dataframe(pd.DataFrame(res), use_container_width=True)
 
 elif page == "🤝 BTTS (AI)":
@@ -493,30 +530,33 @@ elif page == "🤝 BTTS (AI)":
     if st.button("Analizuj BTTS"):
         if not st.session_state['ml_btts']: st.error("Trenuj!"); st.stop()
         res=[]; mm=st.session_state['ml_btts']
-        for i, r in st.session_state['pobrane_mecze'].iterrows():
-            ai = predict_generic(mm['m'], mm['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
-            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); mp = mat['pois'].get('BTTS',0)*100 if mat else 0
+        pobrane = st.session_state['pobrane_mecze']
+        if not pobrane: st.error("Najpierw Skanuj w Radarze!"); st.stop()
+        for m in pobrane:
+            ai = predict_generic(mm['m'], mm['s'], m['Miesiac'], m['HomeTeam'], m['AwayTeam'])
+            mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam']); mp = mat['pois'].get('BTTS',0)*100 if mat else 0
             sig=""
             if ai>60 and mp>60: sig="🔥 TAK"
             if ai<40 and mp<40: sig="🧊 NIE"
-            res.append({"Mecz": r['Label'], "AI Tak": f"{ai:.0f}%", "Mat Tak": f"{mp:.0f}%", "Sygnał": sig})
+            res.append({"Mecz": m['Label'], "AI Tak": f"{ai:.0f}%", "Mat Tak": f"{mp:.0f}%", "Sygnał": sig})
         st.dataframe(pd.DataFrame(res), use_container_width=True)
 
 elif page == "⚽ GOLE (AI Over/Under)":
     st.header("⚽ Linie Bramkowe (1.5 i 2.5)")
     if st.button("Analizuj Gole"):
         if not st.session_state['ml_ou25']: st.error("Trenuj!"); st.stop()
-        res=[]
-        m15 = st.session_state['ml_ou15']; m25 = st.session_state['ml_ou25']
-        for i, r in st.session_state['pobrane_mecze'].iterrows():
-            ai15 = predict_generic(m15['m'], m15['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
-            ai25 = predict_generic(m25['m'], m25['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
-            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam'])
+        res=[]; m15 = st.session_state['ml_ou15']; m25 = st.session_state['ml_ou25']
+        pobrane = st.session_state['pobrane_mecze']
+        if not pobrane: st.error("Najpierw Skanuj w Radarze!"); st.stop()
+        for m in pobrane:
+            ai15 = predict_generic(m15['m'], m15['s'], m['Miesiac'], m['HomeTeam'], m['AwayTeam'])
+            ai25 = predict_generic(m25['m'], m25['s'], m['Miesiac'], m['HomeTeam'], m['AwayTeam'])
+            mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam'])
             mp15 = mat['pois'].get('O15',0)*100 if mat else 0
             mp25 = mat['pois'].get('O25',0)*100 if mat else 0
             sig15 = "🔥 O1.5" if (ai15>70 and mp15>70) else ("🧊 U1.5" if (ai15<30 and mp15<30) else "-")
             sig25 = "🔥 O2.5" if (ai25>60 and mp25>60) else ("🧊 U2.5" if (ai25<35 and mp25<35) else "-")
-            res.append({"Mecz": r['Label'], "AI O1.5": f"{ai15:.0f}%", "Mat O1.5": f"{mp15:.0f}%", "Sig 1.5": sig15,
+            res.append({"Mecz": m['Label'], "AI O1.5": f"{ai15:.0f}%", "Mat O1.5": f"{mp15:.0f}%", "Sig 1.5": sig15,
                         "AI O2.5": f"{ai25:.0f}%", "Mat O2.5": f"{mp25:.0f}%", "Sig 2.5": sig25})
         st.dataframe(pd.DataFrame(res), use_container_width=True)
 
@@ -525,11 +565,13 @@ elif page == "⛳ ROŻNE (AI)":
     if st.button("Analizuj Rożne"):
         if not st.session_state['ml_corn']: st.error("Trenuj!"); st.stop()
         res=[]; mm=st.session_state['ml_corn']
-        for i, r in st.session_state['pobrane_mecze'].iterrows():
-            ai = predict_generic(mm['m'], mm['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
-            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); avg = mat['corn'] if mat else 0
+        pobrane = st.session_state['pobrane_mecze']
+        if not pobrane: st.error("Najpierw Skanuj w Radarze!"); st.stop()
+        for m in pobrane:
+            ai = predict_generic(mm['m'], mm['s'], m['Miesiac'], m['HomeTeam'], m['AwayTeam'])
+            mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam']); avg = mat['corn'] if mat else 0
             sig = "🔥 OVER" if (ai>65 and avg>10) else ""
-            res.append({"Mecz": r['Label'], "AI >9.5": f"{ai:.0f}%", "Średnia": f"{avg:.1f}", "Sygnał": sig})
+            res.append({"Mecz": m['Label'], "AI >9.5": f"{ai:.0f}%", "Średnia": f"{avg:.1f}", "Sygnał": sig})
         st.dataframe(pd.DataFrame(res), use_container_width=True)
 
 elif page == "🟨 KARTKI (AI)":
@@ -537,13 +579,16 @@ elif page == "🟨 KARTKI (AI)":
     if st.button("Analizuj Kartki"):
         if not st.session_state['ml_card']: st.error("Trenuj!"); st.stop()
         res=[]; mm=st.session_state['ml_card']
-        for i, r in st.session_state['pobrane_mecze'].iterrows():
-            ai = predict_generic(mm['m'], mm['s'], r['Miesiac'], r['HomeTeam'], r['AwayTeam'])
-            mat = calc_math_csv(df, r['HomeTeam'], r['AwayTeam']); avg = mat['card'] if mat else 0
+        pobrane = st.session_state['pobrane_mecze']
+        if not pobrane: st.error("Najpierw Skanuj w Radarze!"); st.stop()
+        for m in pobrane:
+            ai = predict_generic(mm['m'], mm['s'], m['Miesiac'], m['HomeTeam'], m['AwayTeam'])
+            mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam']); avg = mat['card'] if mat else 0
             sig = "🔥 OVER" if (ai>65 and avg>4.5) else ""
-            res.append({"Mecz": r['Label'], "AI >3.5": f"{ai:.0f}%", "Średnia": f"{avg:.1f}", "Sygnał": sig})
+            res.append({"Mecz": m['Label'], "AI >3.5": f"{ai:.0f}%", "Średnia": f"{avg:.1f}", "Sygnał": sig})
         st.dataframe(pd.DataFrame(res), use_container_width=True)
 
+# --- ZAKŁADKI KLASYCZNE (HYBRYDA: CALC + ML) ---
 elif page == "8. Schematy Ligowe":
     st.header("🛡️ Schematy Ligowe (Łamaki CSV)")
     if df is None: st.error("Pobierz bazę!"); st.stop()
@@ -572,16 +617,27 @@ elif page == "9. Przeciwnik":
             if wpadki > 0: res.append({'Rywal': opp, 'Wpadki': wpadki})
         st.dataframe(pd.DataFrame(res))
 
-elif page == "10. Łamak H2H":
-    st.header("🔄 Sprawdź H2H (CSV)")
+elif page == "10. Łamak H2H (CSV+ML)": # <--- ZMODYFIKOWANA ZAKŁADKA
+    st.header("🔄 Sprawdź H2H i Szansę na Łamaka")
     c1, c2 = st.columns(2)
     t1 = c1.text_input("Drużyna 1:"); t2 = c2.text_input("Drużyna 2:")
+    
     if st.button("Sprawdź") and df is not None:
         rh, ra = find_teams(df, t1, t2)
         if rh and ra:
+            # 1. SEKCJIA ML
+            if st.session_state['ml_htft']:
+                mm = st.session_state['ml_htft']
+                pred = predict_htft(mm['m'], mm['s'], datetime.now().month, rh, ra)
+                st.warning(f"🤖 AI o Łamakach (Szansa na podstawie stylu gry):\n{pred}")
+            else:
+                st.info("AI: Model nietrenowany.")
+            
+            # 2. SEKCJA HISTORII
+            st.write(f"📜 Historia spotkań {rh} vs {ra} (CSV):")
             m = df[((df['HomeTeam']==rh)&(df['AwayTeam']==ra)) | ((df['HomeTeam']==ra)&(df['AwayTeam']==rh))]
             st.dataframe(m[['Date','HomeTeam','AwayTeam','HTR','FTR']])
-        else: st.warning("Nie znaleziono w CSV.")
+        else: st.warning("Nie znaleziono drużyn w bazie CSV.")
 
 elif page == "11. H2H Kalendarz":
     st.header("📅 Kalendarz Łamaków")
@@ -591,15 +647,31 @@ elif page == "11. H2H Kalendarz":
         lamaki = m[((m['HTR']=='H')&(m['FTR']=='A'))|((m['HTR']=='A')&(m['FTR']=='H'))]
         st.dataframe(lamaki[['Date','HomeTeam','AwayTeam','HTR','FTR']])
 
-elif page == "12. Gole xG (Calc)":
+elif page == "12. Gole xG (Calc+ML)":
     st.header("⚽ Kalkulator Goli")
     c1, c2 = st.columns(2)
     t1 = c1.text_input("Home:"); t2 = c2.text_input("Away:")
     if st.button("Licz") and df is not None:
-        res = calc_math_csv(df, t1, t2)
+        rh, ra = find_teams(df, t1, t2)
+        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
+        
+        # 1. Matematyka
+        res = calc_math_csv(df, rh, ra)
+        # 2. ML
+        ai15, ai25 = 0, 0
+        if st.session_state['ml_ou15']:
+            m15 = st.session_state['ml_ou15']; m25 = st.session_state['ml_ou25']
+            curr_month = datetime.now().month
+            ai15 = predict_generic(m15['m'], m15['s'], curr_month, rh, ra)
+            ai25 = predict_generic(m25['m'], m25['s'], curr_month, rh, ra)
+        
         if res: 
             p = res['pois']
-            st.success(f"Over 1.5: {p['O15']:.1f}% | Over 2.5: {p['O25']:.1f}% | BTTS: {p['BTTS']:.1f}%")
+            c_mat, c_ml = st.columns(2)
+            with c_mat:
+                st.info(f"📊 MATEMATYKA (Poisson)\nOver 1.5: {p['O15']:.1f}%\nOver 2.5: {p['O25']:.1f}%\nBTTS: {p['BTTS']:.1f}%")
+            with c_ml:
+                st.warning(f"🤖 AI (ML)\nOver 1.5: {ai15:.1f}%\nOver 2.5: {ai25:.1f}%")
 
 elif page == "13. Remisy":
     st.header("⚖️ Szukanie Remisów")
@@ -617,26 +689,59 @@ elif page == "14. Dokładny Wynik":
             avg_g = (m['FTHG'].sum()+m['FTAG'].sum())/len(m)
             st.info(f"Średnia goli w meczach {rh}: {avg_g:.1f}")
 
-elif page == "15. Rożne (Calc)":
+elif page == "15. Rożne (Calc+ML)":
     st.header("⛳ Rożne Statystyki")
     c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
     if st.button("Licz Rożne") and df is not None:
-        res = calc_math_csv(df, t1, t2)
-        if res: st.success(f"Średnia rożnych (H+A): {res['corn']:.1f}")
+        rh, ra = find_teams(df, t1, t2)
+        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
+        
+        res = calc_math_csv(df, rh, ra)
+        ai_corn = 0
+        if st.session_state['ml_corn']:
+            mm = st.session_state['ml_corn']
+            ai_corn = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
+            
+        if res: 
+            c1, c2 = st.columns(2)
+            c1.info(f"📊 Średnia (H+A): {res['corn']:.1f}")
+            c2.warning(f"🤖 AI (Over 9.5): {ai_corn:.1f}%")
 
-elif page == "16. Kartki (Calc)":
+elif page == "16. Kartki (Calc+ML)":
     st.header("🟨 Kartki Statystyki")
     c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
     if st.button("Licz Kartki") and df is not None:
-        res = calc_math_csv(df, t1, t2)
-        if res: st.success(f"Średnia kartek (H+A): {res['card']:.1f}")
+        rh, ra = find_teams(df, t1, t2)
+        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
+        
+        res = calc_math_csv(df, rh, ra)
+        ai_card = 0
+        if st.session_state['ml_card']:
+            mm = st.session_state['ml_card']
+            ai_card = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
+            
+        if res: 
+            c1, c2 = st.columns(2)
+            c1.info(f"📊 Średnia (H+A): {res['card']:.1f}")
+            c2.warning(f"🤖 AI (Over 3.5): {ai_card:.1f}%")
 
-elif page == "17. BTTS (Calc)":
+elif page == "17. BTTS (Calc+ML)":
     st.header("🤝 BTTS Manual")
     c1, c2 = st.columns(2); t1 = c1.text_input("H:"); t2 = c2.text_input("A:")
     if st.button("Licz BTTS") and df is not None:
-        res = calc_math_csv(df, t1, t2)
-        if res: st.success(f"Matematyczna szansa BTTS: {res['pois']['BTTS']:.1f}%")
+        rh, ra = find_teams(df, t1, t2)
+        if not rh: st.error("Nie znaleziono drużyn!"); st.stop()
+        
+        res = calc_math_csv(df, rh, ra)
+        ai_btts = 0
+        if st.session_state['ml_btts']:
+            mm = st.session_state['ml_btts']
+            ai_btts = predict_generic(mm['m'], mm['s'], datetime.now().month, rh, ra)
+
+        if res: 
+            c1, c2 = st.columns(2)
+            c1.info(f"📊 Matematyczna szansa BTTS: {res['pois']['BTTS']:.1f}%")
+            c2.warning(f"🤖 AI BTTS: {ai_btts:.1f}%")
 
 elif page == "18. Pewniaki 1X2":
     st.header("💎 Skaner Faworytów (CSV)")
