@@ -19,7 +19,7 @@ try:
 except:
     icon = "⚽"
 
-st.set_page_config(page_title="TrafnyBetBot 2.2", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TrafnyBetBot 2.3", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -152,13 +152,16 @@ def pobierz_baze_csv(ile_lat=5):
     if wszystkie: return pd.concat(wszystkie, ignore_index=True).drop_duplicates()
     return pd.DataFrame()
 
-# --- 5. API DIRECT (SAFE MODE) ---
+# --- 5. API DIRECT (SAFE MODE + CACHE) ---
 API_URL = "https://v3.football.api-sports.io"
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def cached_api_request(url, headers, params):
-    time.sleep(1.5) # BEZPIECZNE OPÓŹNIENIE
-    return requests.get(url, headers=headers, params=params, timeout=10).json()
+def safe_api_request(url, headers, params):
+    time.sleep(1.2) # OPOŹNIENIE 1.2 sekundy
+    try:
+        return requests.get(url, headers=headers, params=params, timeout=10).json()
+    except:
+        return {}
 
 def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
     headers = {"x-apisports-key": api_key}
@@ -169,7 +172,7 @@ def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
     for i in range(dni_w_przod):
         d = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
         try:
-            data = cached_api_request(f"{API_URL}/fixtures", headers, {"date": d})
+            data = safe_api_request(f"{API_URL}/fixtures", headers, {"date": d})
             if 'response' in data:
                 for item in data['response']:
                     dt_str = item['fixture']['date']
@@ -195,7 +198,7 @@ def pobierz_sklady_api(api_key, fixture_id):
     headers = {"x-apisports-key": api_key}
     increment_usage(1)
     try:
-        d = cached_api_request(f"{API_URL}/fixtures/lineups", headers, {"fixture": fixture_id})
+        d = safe_api_request(f"{API_URL}/fixtures/lineups", headers, {"fixture": fixture_id})
         h, a = [], []
         if 'response' in d:
             for t in d['response']:
@@ -210,7 +213,7 @@ def analizuj_h2h_api(api_key, h_id, a_id):
     headers = {"x-apisports-key": api_key}
     increment_usage(1)
     try:
-        d = cached_api_request(f"{API_URL}/fixtures/headtohead", headers, {"h2h": f"{h_id}-{a_id}"})
+        d = safe_api_request(f"{API_URL}/fixtures/headtohead", headers, {"h2h": f"{h_id}-{a_id}"})
         hist=[]; p1=0; p2=0; tot=0
         if 'response' in d:
             for m in d['response']:
@@ -231,7 +234,7 @@ def analizuj_forme_api(api_key, h_id, a_id):
     def check_team(tid):
         p = {"team": tid, "last": "15", "status": "FT"}
         try:
-            d = cached_api_request(f"{API_URL}/fixtures", headers, p)
+            d = safe_api_request(f"{API_URL}/fixtures", headers, p)
             s, c, cnt, l12, l21 = 0, 0, 0, 0, 0
             if 'response' in d:
                 for m in d['response']:
@@ -270,13 +273,11 @@ def calc_stat_lamaki(df, h, a):
     """Oblicza matematyczną szansę na łamaka na podstawie historii w CSV."""
     if df is None: return {'1/2': 0, '2/1': 0}
     
-    # 1. Znajdź drużyny
     all_t = set(df['HomeTeam'])|set(df['AwayTeam'])
     rh = next((t for t in all_t if h.lower() in t.lower()), None)
     ra = next((t for t in all_t if a.lower() in t.lower()), None)
     if not rh or not ra: return {'1/2': 0, '2/1': 0}
     
-    # 2. Policz dla Home (jako gospodarz i gość łącznie lub tylko gospodarz - weźmiemy ogół dla większej próbki)
     mh = df[(df['HomeTeam']==rh) | (df['AwayTeam']==rh)]
     ma = df[(df['HomeTeam']==ra) | (df['AwayTeam']==ra)]
     
@@ -285,25 +286,32 @@ def calc_stat_lamaki(df, h, a):
         total = len(d)
         if total == 0: return 0, 0
         for i, r in d.iterrows():
-            # Jeśli team gra u siebie
             if r['HomeTeam'] == team:
-                if r['HTR'] == 'H' and r['FTR'] == 'A': c12 += 1 # Wygrywali, przegrali (1/2 z perspektywy meczu)
-                if r['HTR'] == 'A' and r['FTR'] == 'H': c21 += 1 # Przegrywali, wygrali (2/1 z perspektywy meczu)
-            # Jeśli team gra na wyjeździe
+                if r['HTR'] == 'H' and r['FTR'] == 'A': c12 += 1
+                if r['HTR'] == 'A' and r['FTR'] == 'H': c21 += 1
             else:
-                if r['HTR'] == 'H' and r['FTR'] == 'A': c12 += 1 # Gospodarz prowadził, Gość (My) wygrał -> To jest 1/2 meczowe
+                if r['HTR'] == 'H' and r['FTR'] == 'A': c12 += 1
                 if r['HTR'] == 'A' and r['FTR'] == 'H': c21 += 1
         return (c12/total)*100, (c21/total)*100
 
     h12, h21 = count_lamaki(mh, rh)
     a12, a21 = count_lamaki(ma, ra)
-    
-    # Uśredniamy szansę wystąpienia w meczu tych dwóch drużyn
-    # Szansa na 1/2 w meczu = (Częstość H w 1/2 + Częstość A w 1/2) / 2
     res_12 = (h12 + a12) / 2
     res_21 = (h21 + a21) / 2
     
     return {'1/2': res_12, '2/1': res_21}
+
+def get_team_lamaki_count(df, team_name):
+    """Zwraca liczbę łamaków dla konkretnej drużyny w całej bazie."""
+    d = df[(df['HomeTeam'] == team_name) | (df['AwayTeam'] == team_name)]
+    total = len(d)
+    if total == 0: return 0, 0
+    cnt = 0
+    for i, r in d.iterrows():
+        # Łamak (H/A lub A/H) w meczu tej drużyny
+        if (r['HTR'] == 'H' and r['FTR'] == 'A') or (r['HTR'] == 'A' and r['FTR'] == 'H'):
+            cnt += 1
+    return cnt, total
 
 def train_generic(df, target_expr, feature_col):
     if df is None or df.empty: return None, None
@@ -393,7 +401,7 @@ def find_teams(df, h, a):
 with st.sidebar:
     try: st.image("icon.png", use_column_width=True)
     except: st.header("⚽")
-    st.title("TrafnyBetBot 2.2 SAFE")
+    st.title("TrafnyBetBot 2.3")
     api_key = st.text_input("Klucz API-Sports:", type="password")
     st.markdown("---")
     
@@ -437,7 +445,7 @@ if page == "1. RADAR (Skanuj)":
     if st.button("🚀 SKANUJ (3 pkt)"):
         if used>=100: st.error("Limit!"); st.stop()
         if not api_key: st.error("❌ WPISZ KLUCZ API!"); st.stop()
-        with st.spinner("Pobieranie terminarza..."):
+        with st.spinner("Pobieranie terminarza (Wolno=Bezpiecznie)..."):
             st.session_state['pobrane_mecze'] = pobierz_mecze_zakres_api(api_key, 3); st.rerun()
 
     if st.session_state['pobrane_mecze']:
@@ -484,7 +492,7 @@ elif page == "⭐ KOSZYK (Dual Core)":
             if not api_key: st.error("Brak klucza API!"); st.stop()
             if act=="STANDARD" and used>=98: st.error("Limit!"); st.stop()
             if act=="PRO" and used>=96: st.error("Limit!"); st.stop()
-            with st.spinner("Analiza..."):
+            with st.spinner("Analiza w toku... (Proszę czekać, spowalniacz API aktywny)"):
                 h, p1, p2 = analizuj_h2h_api(api_key, m['ID_Home'], m['ID_Away'])
                 sh, sa = pobierz_sklady_api(api_key, m['ID_Meczu'])
                 ml_txt = "Brak modelu"
@@ -495,13 +503,11 @@ elif page == "⭐ KOSZYK (Dual Core)":
                 if act=="STANDARD":
                     mat = calc_math_csv(df, m['HomeTeam'], m['AwayTeam'])
                     res['mat'] = mat if mat else {'1':0,'X':0,'2':0,'O15':0,'O25':0}
-                    # DODANO STATYSTYKĘ ŁAMAKÓW
                     res['mat']['lamaki'] = calc_stat_lamaki(df, m['HomeTeam'], m['AwayTeam'])
                     res['src']="CSV Offline"; res['live']=None
                 else:
                     live = analizuj_forme_api(api_key, m['ID_Home'], m['ID_Away'])
                     res['mat'] = live['pois']; res['src']="API Live Form"; res['live']=live['live']
-                    # DODANO STATYSTYKĘ ŁAMAKÓW (Z CSV, bo API Free nie daje historii HT/FT)
                     res['mat']['lamaki'] = calc_stat_lamaki(df, m['HomeTeam'], m['AwayTeam'])
                 st.session_state[f"res_{m['ID_Meczu']}"] = res
         
@@ -648,11 +654,19 @@ elif page == "10. Łamak H2H (CSV+ML)":
                 pred = predict_htft(mm['m'], mm['s'], datetime.now().month, rh, ra)
                 st.warning(f"🤖 AI o Łamakach (Styl gry):\n{pred}")
             
-            # 2. MATEMATYKA (DODANE)
+            # 2. MATEMATYKA (PROCENTY)
             stat = calc_stat_lamaki(df, rh, ra)
             st.info(f"📊 MATEMATYKA (Częstotliwość występowania w CSV):\n1/2: {stat['1/2']:.1f}% | 2/1: {stat['2/1']:.1f}%")
 
-            # 3. HISTORIA
+            # 3. LICZNIKI (NOWOŚĆ)
+            col_h, col_a = st.columns(2)
+            c_h, t_h = get_team_lamaki_count(df, rh)
+            c_a, t_a = get_team_lamaki_count(df, ra)
+            
+            col_h.metric(label=f"Łamaki {rh} (All Time)", value=f"{c_h} z {t_h} meczów")
+            col_a.metric(label=f"Łamaki {ra} (All Time)", value=f"{c_a} z {t_a} meczów")
+
+            # 4. HISTORIA
             m = df[((df['HomeTeam']==rh)&(df['AwayTeam']==ra)) | ((df['HomeTeam']==ra)&(df['AwayTeam']==rh))]
             st.write("📜 Historia H2H:")
             st.dataframe(m[['Date','HomeTeam','AwayTeam','HTR','FTR']])
