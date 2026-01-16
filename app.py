@@ -19,7 +19,7 @@ try:
 except:
     icon = "⚽"
 
-st.set_page_config(page_title="TrafnyBetBot 4.0 BUNKIER", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TrafnyBetBot 3.2 FINAL", page_icon=icon, layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -31,25 +31,49 @@ st.markdown("""
         background: linear-gradient(135deg, #8742f5 0%, #5e17eb 100%); border: none; color: white;
     }
     
-    /* STYLE KOSZYK */
+    /* STYLE KOSZYK - Kolory Przycisków */
     div[data-testid="column"]:nth-of-type(1) .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
     div[data-testid="column"]:nth-of-type(2) .stButton > button { background: linear-gradient(135deg, #f09819 0%, #ff512f 100%); }
     div[data-testid="column"]:nth-of-type(3) .stButton > button { background: linear-gradient(135deg, #cb2d3e 0%, #ef473a 100%); box-shadow: 0 0 15px rgba(239, 71, 58, 0.6); border: 1px solid #ffcc00; }
 
     /* RAMKI */
     .watchlist-box { background-color: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #8742f5; }
-    .math-box { background-color: #1b3a2b; padding: 15px; border-radius: 8px; border: 1px solid #2ecc71; margin-bottom: 5px; font-size: 0.9em; line-height: 1.6; }
-    .math-row { display: flex; justify-content: space-between; border-bottom: 1px solid #2ecc7155; padding: 3px 0; }
-    .math-header { font-weight: bold; color: #2ecc71; margin-bottom: 5px; text-transform: uppercase; margin-top: 10px; border-top: 2px solid #2ecc71; padding-top: 5px; }
+    
+    /* STYL MATEMATYKA (PERFECT LAYOUT) */
+    .math-box { 
+        background-color: #1b3a2b; 
+        padding: 15px; 
+        border-radius: 8px; 
+        border: 1px solid #2ecc71; 
+        margin-bottom: 5px; 
+        font-size: 0.9em;
+        line-height: 1.6;
+    }
+    .math-row { display: flex; justify-content: space-between; border-bottom: 1px solid #2ecc7155; padding: 4px 0; }
+    .math-row:last-child { border-bottom: none; }
+    .math-header { font-weight: bold; color: #2ecc71; margin-bottom: 5px; text-transform: uppercase; margin-top: 15px; border-top: 2px solid #2ecc71; padding-top: 5px; }
     .math-header:first-child { margin-top: 0; border-top: none; }
+    
+    /* STYL ML */
     .ml-box { background-color: #2c0b0e; padding: 15px; border-radius: 8px; border: 1px solid #e74c3c; margin-bottom: 5px; height: 100%; }
-    .dejavu-box { background-color: #4a2c0b; padding: 10px; border-radius: 5px; border: 1px solid #f39c12; margin-bottom: 10px; font-size: 0.9em; }
+    
+    /* STYL DEJAVU */
+    .dejavu-box { 
+        background-color: #4a2c0b; 
+        padding: 10px; 
+        border-radius: 5px; 
+        border: 1px solid #f39c12; 
+        margin-bottom: 10px; 
+        font-size: 0.9em;
+    }
     .dejavu-item { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #f39c1255; }
 
+    /* STATUSY */
     .match-future { color: #2ecc71; font-weight: bold; }
     .match-live { color: #f1c40f; font-weight: bold; animation: pulse 2s infinite; }
     .match-past { color: #e74c3c; font-weight: bold; text-decoration: line-through; }
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    
     [data-testid="stMetricValue"] {font-size: 1.0rem !important; color: #ffcc00;}
     </style>
     """, unsafe_allow_html=True)
@@ -105,7 +129,7 @@ USAGE_FILE = "api_usage.json"
 if 'watchlist' not in st.session_state: st.session_state['watchlist'] = []
 if 'df' not in st.session_state: st.session_state['df'] = None
 if 'pobrane_mecze' not in st.session_state: st.session_state['pobrane_mecze'] = []
-if 'last_api_call' not in st.session_state: st.session_state['last_api_call'] = 0 # SYSTEM ANTY-BAN
+if 'last_api_call' not in st.session_state: st.session_state['last_api_call'] = 0 # ANTY-BAN TIMER
 for k in ['ml_htft', 'ml_1x2', 'ml_btts', 'ml_ou15', 'ml_ou25', 'ml_corn', 'ml_card']:
     if k not in st.session_state: st.session_state[k] = None
 
@@ -169,10 +193,10 @@ def pobierz_baze_csv(ile_lat=5):
 
 # --- 5. SYSTEM ANTY-BAN (BUNKER MODE) ---
 API_URL = "https://v3.football.api-sports.io"
-DELAY_BETWEEN_CALLS = 2.5 # Minimum 2.5 sekundy przerwy między KAŻDYM zapytaniem
+DELAY_BETWEEN_CALLS = 2.0 # Sekundy przerwy między KAŻDYM zapytaniem
 
 def wait_for_slot():
-    """Wymusza przerwę, jeśli ostatnie zapytanie było zbyt niedawno."""
+    """Strażnik czasu - zapobiega banom."""
     now = time.time()
     diff = now - st.session_state['last_api_call']
     if diff < DELAY_BETWEEN_CALLS:
@@ -181,8 +205,7 @@ def wait_for_slot():
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def safe_api_request(url, headers, params):
-    # TO JEST KLUCZOWE - GLOBALNY LIMITER
-    wait_for_slot()
+    wait_for_slot() # <--- TUTAJ JEST OCHRONA
     try:
         return requests.get(url, headers=headers, params=params, timeout=10).json()
     except:
@@ -192,7 +215,7 @@ def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
     headers = {"x-apisports-key": api_key}
     wszystkie = []
     increment_usage(dni_w_przod) 
-    st.info(f"📡 Pobieranie... (Tryb BUNKIER - powolny i bezpieczny)")
+    st.info(f"📡 Pobieranie... (Tryb BUNKIER aktywny)")
 
     for i in range(dni_w_przod):
         d = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
@@ -218,10 +241,7 @@ def pobierz_mecze_zakres_api(api_key, dni_w_przod=3):
     wszystkie = sorted(wszystkie, key=lambda x: x['Timestamp'])
     return wszystkie
 
-# --- FUNKCJE POMOCNICZE (API) ---
-# Uwaga: Usunąłem dekoratory @cache dla tych funkcji, aby bezpiecznie sterować czasem wewnątrz
-# Cache jest na poziomie 'safe_api_request', co wystarczy.
-
+# --- FUNKCJE API (BEZ CACHE DEKORATORA, BO UZYWAJA SAFE_REQUEST Z CACHE) ---
 def pobierz_sklady_api(api_key, fixture_id):
     headers = {"x-apisports-key": api_key}
     increment_usage(1)
@@ -260,7 +280,6 @@ def analizuj_h2h_api(api_key, h_id, a_id):
 def analizuj_forme_api(api_key, h_id, a_id):
     headers = {"x-apisports-key": api_key}
     increment_usage(2) 
-    
     def check_team(tid):
         d = safe_api_request(f"{API_URL}/fixtures", headers, {"team": tid, "last": "15", "status": "FT"})
         s, c, cnt, l12, l21 = 0, 0, 0, 0, 0
@@ -318,8 +337,8 @@ def analizuj_forme_api(api_key, h_id, a_id):
     return {
         'pois': {k: v*100 for k,v in probs.items()}, 
         'live_stats': {
-            'h_12_pct': h_12_pct, 'h_21_pct': h_21_pct, 'h_tot': h_tot,
-            'a_12_pct': a_12_pct, 'a_21_pct': a_21_pct, 'a_tot': a_tot,
+            'h_12_pct': h_12_pct, 'h_21_pct': h_21_pct,
+            'a_12_pct': a_12_pct, 'a_21_pct': a_21_pct,
             'pair_12': pair_12, 'pair_21': pair_21
         },
         'ml_data': ml_live_data
@@ -352,9 +371,7 @@ def analizuj_historia_api(api_key, h_id, a_id, h_name, a_name):
                         if l_type:
                             messages.append({'who': team_name, 'type': l_type, 'date': m_date.strftime('%Y-%m-%d')})
                 except: pass
-
-    check_history(h_id, h_name)
-    check_history(a_id, a_name)
+    check_history(h_id, h_name); check_history(a_id, a_name)
     return messages
 
 # --- 6. ML & STATS ---
@@ -389,6 +406,7 @@ def analizuj_dejavu(df, h, a):
     return messages
 
 def calc_stat_lamaki(df, h, a):
+    """CSV Stat"""
     if df is None: return {'h12':0,'h21':0,'a12':0,'a21':0,'pair_12':0,'pair_21':0}
     all_t = set(df['HomeTeam'])|set(df['AwayTeam'])
     rh = next((t for t in all_t if h.lower() in t.lower()), None)
@@ -512,7 +530,7 @@ def find_teams(df, h, a):
 with st.sidebar:
     try: st.image("icon.png", use_column_width=True)
     except: st.header("⚽")
-    st.title("TrafnyBetBot 4.0")
+    st.title("TrafnyBetBot 3.2 FINAL")
     api_key = st.text_input("Klucz API-Sports:", type="password")
     
     # STATUS API
@@ -678,6 +696,7 @@ elif page == "⭐ KOSZYK (Dual Core)":
         if f"res_{m['ID_Meczu']}" in st.session_state:
             r = st.session_state[f"res_{m['ID_Meczu']}"]
             
+            # SEKCJA DÉJÀ VU
             if r.get('dejavu'):
                 dv_h = [x for x in r['dejavu'] if x['who'] == m['HomeTeam'] or x['who'] == 'Gospodarz']
                 dv_a = [x for x in r['dejavu'] if x['who'] == m['AwayTeam'] or x['who'] == 'Gość']
@@ -954,4 +973,3 @@ elif page == "19. Słownik":
     if df is not None and q:
         ts = sorted(list(set(df['HomeTeam'])|set(df['AwayTeam'])))
         st.write([t for t in ts if q.lower() in t.lower()])
-
